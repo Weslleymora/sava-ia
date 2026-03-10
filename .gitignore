@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# documentos internos — não subir ao repositório
+"Base informacoes/"
+Base\ informacoes/
