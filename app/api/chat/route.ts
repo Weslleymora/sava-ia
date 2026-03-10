@@ -19,14 +19,10 @@ export async function POST(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // Carrega TODOS os dados do caso para contexto completo
+  // Carrega caso completo
   const { data: caseData } = await db
     .from('cases')
-    .select(`
-      id, user_id, titulo, objeto, estado, comentario, status, created_at,
-      documents(name, size_bytes),
-      analyses(content, modelo_usado, model_ai, created_at)
-    `)
+    .select('id, user_id, titulo, objeto, estado, comentario, status, created_at')
     .eq('id', caseId)
     .single()
 
@@ -42,7 +38,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Histórico de mensagens (últimas 30)
+  // Busca documentos do caso
+  const { data: documents } = await db
+    .from('documents')
+    .select('name')
+    .eq('case_id', caseId)
+
+  // Busca análise — prefere o resumo para economizar tokens
+  const { data: analysis } = await db
+    .from('analyses')
+    .select('content, resumo, modelo_usado, model_ai')
+    .eq('case_id', caseId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  // Histórico (últimas 30 mensagens)
   const { data: previousMessages } = await db
     .from('messages')
     .select('role, content')
@@ -51,58 +62,54 @@ export async function POST(req: NextRequest) {
     .limit(30)
 
   // Salva mensagem do usuário
-  await db.from('messages').insert({
-    case_id: caseId,
-    role: 'user',
-    content: message.trim(),
-  })
+  await db.from('messages').insert({ case_id: caseId, role: 'user', content: message.trim() })
 
-  // Análise mais recente
-  const analyses = caseData.analyses as Array<{ content: string; modelo_usado: string; model_ai: string }> ?? []
-  const analysis = analyses.sort ? analyses[analyses.length - 1] : null
+  // Contexto da análise: usa resumo se disponível (econômico), senão trunca o conteúdo completo
+  const docList = (documents ?? []).map(d => `• ${d.name}`).join('\n') || '(nenhum listado)'
 
-  // Documentos do caso
-  const docs = (caseData.documents as Array<{ name: string; size_bytes: number }> ?? [])
-  const docList = docs.map(d => `• ${d.name}`).join('\n')
+  let analysisContext: string
+  if (analysis?.resumo) {
+    analysisContext = `RESUMO EXECUTIVO DO CASO (gerado por IA):\n${analysis.resumo}`
+  } else if (analysis?.content) {
+    // Fallback: primeiros 3000 chars da análise completa
+    const truncated = analysis.content.length > 3000
+      ? analysis.content.slice(0, 3000) + '\n\n[... análise completa disponível na tela ...]'
+      : analysis.content
+    analysisContext = `ANÁLISE DO CASO:\n${truncated}`
+  } else {
+    analysisContext = 'Nenhuma análise disponível ainda para este caso.'
+  }
 
-  // System prompt com contexto COMPLETO e específico
-  const systemPrompt = `Você é um assistente jurídico especializado do escritório SAVA (Sebadelhe Aranha & Vasconcelos), com expertise em direito do consumidor e regulação de energia elétrica — especialmente processos envolvendo a ENERGISA e a ANEEL (REN 1.000/2021, PRODIST, Código Civil, CDC).
+  const systemPrompt = `Você é o assistente jurídico do escritório SAVA (Sebadelhe Aranha & Vasconcelos), com expertise em direito do consumidor e regulação da ENERGISA (REN 1.000/2021, PRODIST, CDC, Código Civil).
 
-═══════════════════════════════════════
-DADOS DO PROCESSO EM ANÁLISE
-═══════════════════════════════════════
+═══════════════════════════════════
+PROCESSO EM PAUTA
+═══════════════════════════════════
 Identificação: ${caseData.titulo || '(sem título)'}
-Objeto da ação: ${caseData.objeto}
-Estado/jurisdição: ${caseData.estado || 'Não especificado'}
-Data de cadastro: ${new Date(caseData.created_at).toLocaleDateString('pt-BR')}
-Status: ${caseData.status}
-${caseData.comentario ? `\nInstrução do advogado: "${caseData.comentario}"` : ''}
+Objeto: ${caseData.objeto}
+Estado: ${caseData.estado || 'Não especificado'}
+Data: ${new Date(caseData.created_at).toLocaleDateString('pt-BR')}
+${caseData.comentario ? `Instrução do advogado: "${caseData.comentario}"` : ''}
 
-Documentos enviados:
-${docList || '(nenhum documento listado)'}
+Documentos analisados:
+${docList}
 
-═══════════════════════════════════════
-ANÁLISE COMPLETA GERADA PELA IA
-═══════════════════════════════════════
-${analysis ? `Modelo: ${analysis.model_ai} — ${analysis.modelo_usado}\n\n${analysis.content}` : 'Nenhuma análise disponível para este caso ainda.'}
+═══════════════════════════════════
+${analysisContext}
+═══════════════════════════════════
 
-═══════════════════════════════════════
-REGRAS DE RESPOSTA — SIGA RIGOROSAMENTE
-═══════════════════════════════════════
-1. Responda SEMPRE com base específica neste processo — não use respostas genéricas.
-2. Quando a pergunta se referir a algo que está na análise acima, cite diretamente o trecho relevante.
-3. Seja direto e objetivo: vá ao ponto sem rodeios.
-4. Use linguagem jurídica precisa — cite artigos, resoluções e súmulas relevantes para ESTE caso.
-5. Se identificar risco ou ponto fraco neste processo específico, aponte claramente.
-6. Se a pergunta não puder ser respondida com base nos dados disponíveis, diga exatamente o que falta.
-7. Jamais invente fatos sobre o processo — baseie-se apenas no que está acima.`
+REGRAS:
+• Responda com base ESPECÍFICA neste processo — sem respostas genéricas
+• Seja direto e objetivo: vá ao ponto
+• Cite artigos, resoluções e precedentes aplicáveis A ESTE caso
+• Se a pergunta tratar de algo mencionado no resumo/análise, referencie diretamente
+• Aponte riscos e pontos fracos específicos deste processo quando relevante
+• Se não houver informação suficiente, diga o que falta
+• Jamais invente fatos sobre o processo`
 
   const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
-    ...(previousMessages?.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })) ?? []),
+    ...(previousMessages?.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) ?? []),
     { role: 'user', content: message.trim() },
   ]
 
@@ -127,11 +134,7 @@ REGRAS DE RESPOSTA — SIGA RIGOROSAMENTE
         }
       }
 
-      await db.from('messages').insert({
-        case_id: caseId,
-        role: 'assistant',
-        content: assistantContent,
-      })
+      await db.from('messages').insert({ case_id: caseId, role: 'assistant', content: assistantContent })
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
       controller.close()
@@ -139,10 +142,6 @@ REGRAS DE RESPOSTA — SIGA RIGOROSAMENTE
   })
 
   return new Response(readableStream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    },
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
   })
 }

@@ -40,13 +40,45 @@ async function extractTextFromImage(buffer: Buffer, mimeType: string, fileName: 
   return `=== IMAGEM: ${fileName} ===\n${response.choices[0]?.message?.content ?? ''}`
 }
 
+async function gerarResumo(
+  analysisContent: string,
+  objeto: string,
+  titulo: string | null
+): Promise<string> {
+  const res = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'user',
+        content: `Crie um RESUMO EXECUTIVO objetivo do caso jurídico abaixo (máx. 400 palavras).
+
+Estruture assim:
+**Objeto:** [tipo de ação]
+**Contexto:** [1-2 frases sobre o caso específico]
+**Teses principais:** [lista com 2-4 argumentos jurídicos centrais]
+**Riscos e pontos críticos:** [lista com 2-3 pontos de atenção]
+**Recomendação estratégica:** [1-2 frases diretas]
+
+Use linguagem jurídica precisa. Cite artigos e normas relevantes (REN 1.000, PRODIST, CDC, CC).
+Este resumo será o contexto da IA para continuar a conversa sobre o caso.
+
+PROCESSO: ${titulo || objeto}
+ANÁLISE COMPLETA:
+${analysisContent}`,
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 600,
+  })
+
+  return res.choices[0]?.message?.content ?? ''
+}
+
 export async function POST(req: NextRequest) {
-  // Autenticação via cookie session
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Admin client bypassa RLS — seguro pois a autenticação já foi verificada acima
   const db = createAdminClient()
 
   let formData: FormData
@@ -65,7 +97,7 @@ export async function POST(req: NextRequest) {
   if (!objeto) return NextResponse.json({ error: 'Objeto é obrigatório' }, { status: 400 })
   if (!files || files.length === 0) return NextResponse.json({ error: 'Envie ao menos 1 arquivo' }, { status: 400 })
 
-  // 1. Cria o caso no banco
+  // 1. Cria o caso
   const { data: caseData, error: caseError } = await db
     .from('cases')
     .insert({
@@ -87,19 +119,15 @@ export async function POST(req: NextRequest) {
   const caseId = caseData.id
 
   try {
-    // 2. Processa cada arquivo
+    // 2. Processa arquivos
     const texts: string[] = []
 
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
 
-      // Upload para Storage
       const storagePath = `${user.id}/${caseId}/${file.name}`
-      await db.storage
-        .from('documents')
-        .upload(storagePath, buffer, { contentType: file.type, upsert: true })
-
+      await db.storage.from('documents').upload(storagePath, buffer, { contentType: file.type, upsert: true })
       await db.from('documents').insert({
         case_id: caseId,
         name: file.name,
@@ -107,7 +135,6 @@ export async function POST(req: NextRequest) {
         size_bytes: file.size,
       })
 
-      // Extração de texto — imagens usam Vision, demais usam extração local
       let text: string
       if (isImage(file.type, file.name)) {
         text = await extractTextFromImage(buffer, file.type, file.name)
@@ -117,7 +144,7 @@ export async function POST(req: NextRequest) {
       texts.push(text)
     }
 
-    // 3. Seleciona prompt e chama OpenAI com streaming
+    // 3. Gera análise principal via streaming
     const promptConfig = getPromptConfig(objeto)
     const documentText = concatenateTexts(texts)
     const prompt = promptConfig.buildPrompt(documentText, comentario || undefined)
@@ -145,6 +172,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // 4. Salva análise completa
         await db.from('analyses').insert({
           case_id: caseId,
           content: analysisContent,
@@ -153,6 +181,15 @@ export async function POST(req: NextRequest) {
         })
 
         await db.from('cases').update({ status: 'done' }).eq('id', caseId)
+
+        // 5. Gera resumo executivo em background (gpt-4o-mini, econômico)
+        gerarResumo(analysisContent, objeto, titulo)
+          .then(resumo => {
+            if (resumo) {
+              db.from('analyses').update({ resumo }).eq('case_id', caseId)
+            }
+          })
+          .catch(e => console.error('[analyze] resumo generation failed:', e))
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, caseId })}\n\n`))
         controller.close()
