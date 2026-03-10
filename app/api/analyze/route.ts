@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { openai } from '@/lib/openai'
 import { extractTextFromFile, concatenateTexts } from '@/lib/pdf'
 import { getPromptConfig } from '@/lib/prompts'
@@ -40,9 +41,13 @@ async function extractTextFromImage(buffer: Buffer, mimeType: string, fileName: 
 }
 
 export async function POST(req: NextRequest) {
+  // Autenticação via cookie session
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Admin client bypassa RLS — seguro pois a autenticação já foi verificada acima
+  const db = createAdminClient()
 
   let formData: FormData
   try {
@@ -61,7 +66,7 @@ export async function POST(req: NextRequest) {
   if (!files || files.length === 0) return NextResponse.json({ error: 'Envie ao menos 1 arquivo' }, { status: 400 })
 
   // 1. Cria o caso no banco
-  const { data: caseData, error: caseError } = await supabase
+  const { data: caseData, error: caseError } = await db
     .from('cases')
     .insert({
       user_id: user.id,
@@ -75,7 +80,8 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (caseError || !caseData) {
-    return NextResponse.json({ error: 'Erro ao criar caso' }, { status: 500 })
+    console.error('[analyze] caseError:', caseError)
+    return NextResponse.json({ error: `Erro ao criar caso: ${caseError?.message ?? 'desconhecido'}` }, { status: 500 })
   }
 
   const caseId = caseData.id
@@ -90,11 +96,11 @@ export async function POST(req: NextRequest) {
 
       // Upload para Storage
       const storagePath = `${user.id}/${caseId}/${file.name}`
-      await supabase.storage
+      await db.storage
         .from('documents')
         .upload(storagePath, buffer, { contentType: file.type, upsert: true })
 
-      await supabase.from('documents').insert({
+      await db.from('documents').insert({
         case_id: caseId,
         name: file.name,
         storage_path: storagePath,
@@ -139,20 +145,20 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        await supabase.from('analyses').insert({
+        await db.from('analyses').insert({
           case_id: caseId,
           content: analysisContent,
           modelo_usado: promptConfig.label,
           model_ai: promptConfig.model,
         })
 
-        await supabase.from('cases').update({ status: 'done' }).eq('id', caseId)
+        await db.from('cases').update({ status: 'done' }).eq('id', caseId)
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, caseId })}\n\n`))
         controller.close()
       },
       async cancel() {
-        await supabase.from('cases').update({ status: 'error' }).eq('id', caseId)
+        await db.from('cases').update({ status: 'error' }).eq('id', caseId)
       },
     })
 
@@ -165,7 +171,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[analyze]', err)
-    await supabase.from('cases').update({ status: 'error' }).eq('id', caseId)
+    await db.from('cases').update({ status: 'error' }).eq('id', caseId)
     return NextResponse.json({ error: (err as Error).message ?? 'Erro ao processar análise' }, { status: 500 })
   }
 }
