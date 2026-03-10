@@ -33,6 +33,11 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
     accept: {
       'application/pdf': ['.pdf'],
       'text/plain': ['.txt'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
     },
     maxFiles: maxFiles - files.length,
   })
@@ -59,7 +64,7 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
         <p className="text-sm font-medium text-zinc-300">
           {isDragActive ? 'Solte os arquivos aqui' : 'Clique ou arraste os arquivos'}
         </p>
-        <p className="text-xs text-zinc-500 mt-1">PDF ou TXT • Até {maxFiles} arquivos</p>
+        <p className="text-xs text-zinc-500 mt-1">PDF, DOCX, DOC, TXT ou imagem • Até {maxFiles} arquivos</p>
       </div>
 
       {files.length > 0 && (

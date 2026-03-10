@@ -61,8 +61,16 @@ export default function NovaAnalisePage() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? 'Erro ao iniciar análise')
+        let errorMsg = `Erro ${res.status}`
+        try {
+          const err = await res.json()
+          errorMsg = err.error ?? errorMsg
+        } catch {
+          const text = await res.text().catch(() => '')
+          if (res.status === 413) errorMsg = 'Arquivos muito grandes. Reduza o tamanho total e tente novamente.'
+          else if (text) errorMsg = text.slice(0, 120)
+        }
+        throw new Error(errorMsg)
       }
 
       // Lê o stream para obter o caseId

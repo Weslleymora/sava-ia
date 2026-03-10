@@ -1,29 +1,73 @@
-// Extração de texto de PDFs usando pdf-parse
-// Fallback para text/plain e outros formatos
+// Extração de texto de múltiplos formatos de arquivo
 
 export async function extractTextFromFile(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
-  if (mimeType === 'text/plain') {
+  const nameLower = fileName.toLowerCase()
+
+  // ── TXT ──────────────────────────────────────────────────────────────────
+  if (mimeType === 'text/plain' || nameLower.endsWith('.txt')) {
     return buffer.toString('utf-8')
   }
 
-  if (
-    mimeType === 'application/pdf' ||
-    fileName.toLowerCase().endsWith('.pdf')
-  ) {
+  // ── PDF ──────────────────────────────────────────────────────────────────
+  if (mimeType === 'application/pdf' || nameLower.endsWith('.pdf')) {
     try {
-      // Importação dinâmica para evitar problemas com SSR
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
       const data = await pdfParse(buffer)
-      return data.text || ''
+      const text = (data.text || '').trim()
+      if (!text) throw new Error('PDF sem texto extraível')
+      return text
     } catch (err) {
       console.error('Erro ao extrair texto do PDF:', err)
-      throw new Error(`Não foi possível extrair texto de "${fileName}". Verifique se o PDF não está protegido por senha.`)
+      throw new Error(`Não foi possível extrair texto de "${fileName}". O PDF pode estar protegido ou ser baseado em imagem (escaneado).`)
     }
   }
 
-  // DOC/DOCX: retorna aviso (requer biblioteca adicional se necessário)
-  throw new Error(`Formato "${mimeType}" não suportado para extração de texto. Use PDF ou TXT.`)
+  // ── DOCX ─────────────────────────────────────────────────────────────────
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    nameLower.endsWith('.docx')
+  ) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mammoth = require('mammoth') as { extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }> }
+      const result = await mammoth.extractRawText({ buffer })
+      return result.value.trim()
+    } catch (err) {
+      console.error('Erro ao extrair texto do DOCX:', err)
+      throw new Error(`Não foi possível extrair texto de "${fileName}".`)
+    }
+  }
+
+  // ── DOC (legado) ──────────────────────────────────────────────────────────
+  if (
+    mimeType === 'application/msword' ||
+    nameLower.endsWith('.doc')
+  ) {
+    try {
+      // mammoth lê .doc básico também
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mammoth = require('mammoth') as { extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }> }
+      const result = await mammoth.extractRawText({ buffer })
+      return result.value.trim()
+    } catch {
+      throw new Error(`Arquivo .doc "${fileName}" não pôde ser processado. Converta para .docx ou .pdf e tente novamente.`)
+    }
+  }
+
+  // ── IMAGENS (JPG, PNG, WEBP, GIF) — enviadas ao OpenAI Vision ────────────
+  if (
+    mimeType.startsWith('image/') ||
+    /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(nameLower)
+  ) {
+    return `[IMAGEM: ${fileName}]`
+    // O buffer da imagem é tratado diretamente na route.ts com OpenAI Vision
+  }
+
+  // ── Formato não suportado ─────────────────────────────────────────────────
+  throw new Error(
+    `Formato "${fileName}" não suportado. Use: PDF, DOCX, DOC ou TXT.`
+  )
 }
 
 export function concatenateTexts(texts: string[]): string {

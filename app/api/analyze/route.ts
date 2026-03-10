@@ -4,14 +4,53 @@ import { openai } from '@/lib/openai'
 import { extractTextFromFile, concatenateTexts } from '@/lib/pdf'
 import { getPromptConfig } from '@/lib/prompts'
 
-export const maxDuration = 120 // segundos (Vercel Pro / VPS sem limite)
+export const maxDuration = 120
+
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp']
+
+function isImage(mimeType: string, fileName: string) {
+  return IMAGE_TYPES.includes(mimeType) || /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(fileName)
+}
+
+async function extractTextFromImage(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+  const base64 = buffer.toString('base64')
+  const safeType = IMAGE_TYPES.includes(mimeType) ? mimeType : 'image/jpeg'
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'Extraia e transcreva TODO o texto visível nesta imagem de documento jurídico. Preserve a formatação e estrutura. Se for uma petição, intimação ou documento processual, transcreva integralmente.',
+          },
+          {
+            type: 'image_url',
+            image_url: { url: `data:${safeType};base64,${base64}`, detail: 'high' },
+          },
+        ],
+      },
+    ],
+    max_tokens: 4000,
+  })
+
+  return `=== IMAGEM: ${fileName} ===\n${response.choices[0]?.message?.content ?? ''}`
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const formData = await req.formData()
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'Erro ao ler os arquivos. O total pode ter ultrapassado o limite de tamanho.' }, { status: 413 })
+  }
+
   const objeto = formData.get('objeto') as string
   const estado = formData.get('estado') as string | null
   const comentario = formData.get('comentario') as string | null
@@ -42,7 +81,7 @@ export async function POST(req: NextRequest) {
   const caseId = caseData.id
 
   try {
-    // 2. Upload dos arquivos para Supabase Storage + extração de texto
+    // 2. Processa cada arquivo
     const texts: string[] = []
 
     for (const file of files) {
@@ -53,12 +92,8 @@ export async function POST(req: NextRequest) {
       const storagePath = `${user.id}/${caseId}/${file.name}`
       await supabase.storage
         .from('documents')
-        .upload(storagePath, buffer, {
-          contentType: file.type,
-          upsert: true,
-        })
+        .upload(storagePath, buffer, { contentType: file.type, upsert: true })
 
-      // Registra documento no banco
       await supabase.from('documents').insert({
         case_id: caseId,
         name: file.name,
@@ -66,17 +101,21 @@ export async function POST(req: NextRequest) {
         size_bytes: file.size,
       })
 
-      // Extrai texto
-      const text = await extractTextFromFile(buffer, file.type, file.name)
+      // Extração de texto — imagens usam Vision, demais usam extração local
+      let text: string
+      if (isImage(file.type, file.name)) {
+        text = await extractTextFromImage(buffer, file.type, file.name)
+      } else {
+        text = await extractTextFromFile(buffer, file.type, file.name)
+      }
       texts.push(text)
     }
 
-    // 3. Seleciona prompt baseado no objeto
+    // 3. Seleciona prompt e chama OpenAI com streaming
     const promptConfig = getPromptConfig(objeto)
     const documentText = concatenateTexts(texts)
     const prompt = promptConfig.buildPrompt(documentText, comentario || undefined)
 
-    // 4. Chama OpenAI com streaming e acumula o resultado
     let analysisContent = ''
 
     const stream = await openai.chat.completions.create({
@@ -90,7 +129,6 @@ export async function POST(req: NextRequest) {
 
     const readableStream = new ReadableStream({
       async start(controller) {
-        // Envia o caseId logo no início para o frontend redirecionar
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ caseId })}\n\n`))
 
         for await (const chunk of stream) {
@@ -101,7 +139,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 5. Salva análise no banco
         await supabase.from('analyses').insert({
           case_id: caseId,
           content: analysisContent,
@@ -109,17 +146,12 @@ export async function POST(req: NextRequest) {
           model_ai: promptConfig.model,
         })
 
-        // 6. Atualiza status do caso
-        await supabase
-          .from('cases')
-          .update({ status: 'done' })
-          .eq('id', caseId)
+        await supabase.from('cases').update({ status: 'done' }).eq('id', caseId)
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, caseId })}\n\n`))
         controller.close()
       },
       async cancel() {
-        // Se o cliente cancelar, marca como erro
         await supabase.from('cases').update({ status: 'error' }).eq('id', caseId)
       },
     })
@@ -134,6 +166,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[analyze]', err)
     await supabase.from('cases').update({ status: 'error' }).eq('id', caseId)
-    return NextResponse.json({ error: 'Erro ao processar análise' }, { status: 500 })
+    return NextResponse.json({ error: (err as Error).message ?? 'Erro ao processar análise' }, { status: 500 })
   }
 }
