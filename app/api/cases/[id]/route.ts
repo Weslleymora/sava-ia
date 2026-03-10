@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET(
   _req: NextRequest,
@@ -10,14 +11,11 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: caseData, error } = await supabase
+  const db = createAdminClient()
+
+  const { data: caseData, error } = await db
     .from('cases')
-    .select(`
-      *,
-      documents(*),
-      analyses(*),
-      messages(*)
-    `)
+    .select(`*, documents(*), analyses(*), messages(*)`)
     .eq('id', id)
     .single()
 
@@ -25,8 +23,7 @@ export async function GET(
     return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 })
   }
 
-  // Verifica acesso
-  const { data: profile } = await supabase
+  const { data: profile } = await db
     .from('profiles')
     .select('role')
     .eq('id', user.id)
@@ -36,7 +33,6 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Ordena mensagens por data
   if (caseData.messages) {
     caseData.messages.sort(
       (a: { created_at: string }, b: { created_at: string }) =>

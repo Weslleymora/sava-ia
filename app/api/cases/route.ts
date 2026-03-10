@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase
+  const db = createAdminClient()
+
+  const { data: profile } = await db
     .from('profiles')
     .select('role')
     .eq('id', user.id)
@@ -14,7 +17,7 @@ export async function GET() {
 
   const isAdmin = profile?.role === 'admin'
 
-  let query = supabase
+  let query = db
     .from('cases')
     .select('id, titulo, objeto, estado, status, created_at, documents(id)')
     .order('created_at', { ascending: false })

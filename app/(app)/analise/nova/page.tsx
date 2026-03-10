@@ -15,8 +15,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { OBJETOS_ENERGISA, ESTADOS_BRASIL } from '@/lib/prompts'
-import { Loader2, Send } from 'lucide-react'
+import { Loader2, Send, Scale, FileText, MessageSquare, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+
+const STEPS = [
+  { icon: FileText,     label: 'Lendo documentos...',      pct: 15 },
+  { icon: Scale,        label: 'Extraindo texto...',        pct: 30 },
+  { icon: Sparkles,     label: 'Aplicando prompt jurídico...', pct: 50 },
+  { icon: Loader2,      label: 'Consultando IA...',         pct: 65 },
+  { icon: MessageSquare,label: 'Gerando análise...',        pct: 85 },
+  { icon: Sparkles,     label: 'Finalizando ficha...',      pct: 96 },
+]
 
 export default function NovaAnalisePage() {
   const router = useRouter()
@@ -26,7 +35,8 @@ export default function NovaAnalisePage() {
   const [comentario, setComentario] = useState('')
   const [titulo, setTitulo] = useState('')
   const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState('')
+  const [stepIdx, setStepIdx] = useState(0)
+  const [pct, setPct] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,7 +52,8 @@ export default function NovaAnalisePage() {
     }
 
     setLoading(true)
-    setProgress('Enviando arquivos...')
+    setStepIdx(0)
+    setPct(5)
 
     const fd = new FormData()
     fd.append('objeto', objeto)
@@ -52,6 +63,14 @@ export default function NovaAnalisePage() {
     files.forEach((f) => fd.append('files', f))
 
     abortRef.current = new AbortController()
+
+    // Avança steps automaticamente enquanto aguarda
+    let currentStep = 0
+    const stepTimer = setInterval(() => {
+      currentStep = Math.min(currentStep + 1, STEPS.length - 1)
+      setStepIdx(currentStep)
+      setPct(STEPS[currentStep].pct)
+    }, 3500)
 
     try {
       const res = await fetch('/api/analyze', {
@@ -73,44 +92,110 @@ export default function NovaAnalisePage() {
         throw new Error(errorMsg)
       }
 
-      // Lê o stream para obter o caseId
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let caseId: string | null = null
-
-      setProgress('Analisando documentos com IA...')
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
         const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
+        for (const line of text.split('\n')) {
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.caseId && !caseId) {
-              caseId = data.caseId
-            }
+            if (data.caseId && !caseId) caseId = data.caseId
             if (data.done && caseId) {
-              router.push(`/analise/${caseId}`)
+              clearInterval(stepTimer)
+              setPct(100)
+              setTimeout(() => router.push(`/analise/${caseId}`), 400)
               return
             }
-          } catch {
-            // ignora linhas mal formadas
-          }
+          } catch { /* ignora */ }
         }
       }
 
-      if (caseId) router.push(`/analise/${caseId}`)
+      if (caseId) {
+        clearInterval(stepTimer)
+        setPct(100)
+        setTimeout(() => router.push(`/analise/${caseId}`), 400)
+      }
     } catch (err: unknown) {
+      clearInterval(stepTimer)
       if (err instanceof Error && err.name === 'AbortError') return
       toast.error((err as Error).message ?? 'Erro ao processar análise.')
       setLoading(false)
-      setProgress('')
+      setPct(0)
     }
+  }
+
+  const currentStep = STEPS[stepIdx]
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center z-50">
+        {/* Background grid */}
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: 'linear-gradient(to right, #a78bfa 1px, transparent 1px), linear-gradient(to bottom, #a78bfa 1px, transparent 1px)',
+            backgroundSize: '40px 40px',
+          }}
+        />
+
+        {/* Glow */}
+        <div className="absolute w-96 h-96 bg-violet-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative text-center px-8 max-w-sm w-full">
+          {/* Icon animado */}
+          <div className="w-20 h-20 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-8 shadow-lg shadow-violet-500/10">
+            <currentStep.icon className="w-9 h-9 text-violet-400 animate-pulse" />
+          </div>
+
+          {/* Texto */}
+          <h2 className="text-xl font-bold text-white mb-2">Analisando com IA</h2>
+          <p className="text-zinc-400 text-sm mb-8 leading-relaxed">{currentStep.label}</p>
+
+          {/* Progress bar */}
+          <div className="w-full bg-zinc-800 rounded-full h-1.5 mb-3 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-zinc-600 text-xs">{pct}%</p>
+
+          {/* Steps indicadores */}
+          <div className="flex justify-center gap-1.5 mt-6">
+            {STEPS.map((_, i) => (
+              <span
+                key={i}
+                className={`h-1 rounded-full transition-all duration-500 ${
+                  i === stepIdx
+                    ? 'w-6 bg-violet-400'
+                    : i < stepIdx
+                    ? 'w-2 bg-violet-600'
+                    : 'w-2 bg-zinc-700'
+                }`}
+              />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              abortRef.current?.abort()
+              setLoading(false)
+              setPct(0)
+            }}
+            className="mt-8 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -125,7 +210,7 @@ export default function NovaAnalisePage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Título */}
         <div className="space-y-2">
-          <Label htmlFor="titulo" className="text-zinc-300">Identificação do Processo (opcional)</Label>
+          <Label htmlFor="titulo" className="text-zinc-300">Identificação do Processo <span className="text-zinc-600">(opcional)</span></Label>
           <Input
             id="titulo"
             placeholder="Ex: João Silva vs Energisa — Suspensão de Fornecimento"
@@ -145,7 +230,7 @@ export default function NovaAnalisePage() {
               <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white focus:border-violet-500">
                 <SelectValue placeholder="Selecione o objeto..." />
               </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800">
+              <SelectContent className="bg-zinc-900 border-zinc-800 max-h-72">
                 {OBJETOS_ENERGISA.map((obj) => (
                   <SelectItem key={obj} value={obj} className="text-zinc-300 focus:text-white focus:bg-zinc-800">
                     {obj}
@@ -156,7 +241,7 @@ export default function NovaAnalisePage() {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-zinc-300">Estado (opcional)</Label>
+            <Label className="text-zinc-300">Estado <span className="text-zinc-600">(opcional)</span></Label>
             <Select value={estado} onValueChange={setEstado}>
               <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white focus:border-violet-500">
                 <SelectValue placeholder="Selecione o estado..." />
@@ -186,7 +271,7 @@ export default function NovaAnalisePage() {
         {/* Comentário */}
         <div className="space-y-2">
           <Label htmlFor="comentario" className="text-zinc-300">
-            Perguntas ou instruções adicionais para a IA (opcional)
+            Perguntas ou instruções adicionais <span className="text-zinc-600">(opcional)</span>
           </Label>
           <Textarea
             id="comentario"
@@ -201,39 +286,14 @@ export default function NovaAnalisePage() {
         </div>
 
         {/* Submit */}
-        <div className="flex items-center gap-4 pt-2">
+        <div className="pt-2">
           <Button
             type="submit"
-            disabled={loading}
-            className="bg-violet-600 hover:bg-violet-500 text-white font-semibold py-5 px-8 rounded-xl gap-2 transition-all"
+            className="w-full sm:w-auto bg-violet-600 hover:bg-violet-500 text-white font-semibold py-5 px-8 rounded-xl gap-2 transition-all shadow-lg shadow-violet-500/20"
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {progress}
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Analisar com IA
-              </>
-            )}
+            <Send className="w-4 h-4" />
+            Analisar com IA
           </Button>
-
-          {loading && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                abortRef.current?.abort()
-                setLoading(false)
-                setProgress('')
-              }}
-              className="text-zinc-500 hover:text-red-400"
-            >
-              Cancelar
-            </Button>
-          )}
         </div>
       </form>
     </div>

@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-
-// Apenas admin pode acessar esses endpoints
-async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
-  const { data } = await supabase.from('profiles').select('role').eq('id', userId).single()
-  return data?.role === 'admin'
-}
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // GET /api/admin/users — lista todos os usuários
 export async function GET() {
@@ -14,10 +8,12 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const isAdmin = await requireAdmin(supabase, user.id)
-  if (!isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = createAdminClient()
 
-  const { data, error } = await supabase
+  const { data: profile } = await db.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { data, error } = await db
     .from('profiles')
     .select('id, name, role, active, created_at')
     .order('created_at', { ascending: true })
@@ -32,28 +28,21 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const isAdmin = await requireAdmin(supabase, user.id)
-  if (!isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = createAdminClient()
+
+  const { data: profile } = await db.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
   const { email, name, password, role } = body as {
-    email: string
-    name: string
-    password: string
-    role: string
+    email: string; name: string; password: string; role: string
   }
 
   if (!email || !name || !password || !role) {
     return NextResponse.json({ error: 'Campos obrigatórios: email, name, password, role' }, { status: 400 })
   }
 
-  // Usa service role para criar usuário
-  const adminSupabase = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-
-  const { data: newUser, error: createError } = await adminSupabase.auth.admin.createUser({
+  const { data: newUser, error: createError } = await db.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -65,10 +54,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Atualiza role no perfil (o trigger cria com 'advogado' por padrão)
-  await adminSupabase
-    .from('profiles')
-    .update({ role, name })
-    .eq('id', newUser.user.id)
+  await db.from('profiles').update({ role, name }).eq('id', newUser.user.id)
 
   return NextResponse.json({ success: true, userId: newUser.user.id })
 }
@@ -79,8 +65,10 @@ export async function PATCH(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const isAdmin = await requireAdmin(supabase, user.id)
-  if (!isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = createAdminClient()
+
+  const { data: profile } = await db.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
   const { userId, role, active } = body as { userId: string; role?: string; active?: boolean }
@@ -88,10 +76,10 @@ export async function PATCH(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'userId obrigatório' }, { status: 400 })
 
   const updates: Record<string, unknown> = {}
-  if (role) updates.role = role
+  if (role !== undefined) updates.role = role
   if (active !== undefined) updates.active = active
 
-  const { error } = await supabase.from('profiles').update(updates).eq('id', userId)
+  const { error } = await db.from('profiles').update(updates).eq('id', userId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ success: true })

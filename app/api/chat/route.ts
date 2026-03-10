@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { openai, MODELS } from '@/lib/openai'
 
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
+  // Auth via cookie session
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,8 +18,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'caseId e message são obrigatórios' }, { status: 400 })
   }
 
+  // Admin client bypassa RLS para todas as operações de banco
+  const db = createAdminClient()
+
   // Verifica acesso ao caso
-  const { data: caseData } = await supabase
+  const { data: caseData } = await db
     .from('cases')
     .select('user_id, objeto')
     .eq('id', caseId)
@@ -25,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   if (!caseData) return NextResponse.json({ error: 'Caso não encontrado' }, { status: 404 })
 
-  const { data: profile } = await supabase
+  const { data: profile } = await db
     .from('profiles')
     .select('role')
     .eq('id', user.id)
@@ -36,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Busca análise principal como contexto
-  const { data: analysis } = await supabase
+  const { data: analysis } = await db
     .from('analyses')
     .select('content')
     .eq('case_id', caseId)
@@ -44,16 +49,16 @@ export async function POST(req: NextRequest) {
     .limit(1)
     .single()
 
-  // Busca histórico de mensagens
-  const { data: previousMessages } = await supabase
+  // Busca histórico de mensagens (últimas 20)
+  const { data: previousMessages } = await db
     .from('messages')
     .select('role, content')
     .eq('case_id', caseId)
     .order('created_at', { ascending: true })
-    .limit(20) // últimas 20 mensagens
+    .limit(20)
 
   // Salva mensagem do usuário
-  await supabase.from('messages').insert({
+  await db.from('messages').insert({
     case_id: caseId,
     role: 'user',
     content: message.trim(),
@@ -77,7 +82,6 @@ Responda às perguntas do advogado de forma objetiva, técnica e embasada juridi
     { role: 'user', content: message.trim() },
   ]
 
-  // Stream da resposta
   let assistantContent = ''
 
   const stream = await openai.chat.completions.create({
@@ -100,7 +104,7 @@ Responda às perguntas do advogado de forma objetiva, técnica e embasada juridi
       }
 
       // Salva resposta do assistente
-      await supabase.from('messages').insert({
+      await db.from('messages').insert({
         case_id: caseId,
         role: 'assistant',
         content: assistantContent,
