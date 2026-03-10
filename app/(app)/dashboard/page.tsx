@@ -1,16 +1,21 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import CaseCard from '@/components/CaseCard'
 import { Button } from '@/components/ui/button'
 import { PlusCircle, FolderOpen, CheckCircle2, Loader2, AlertCircle, LayoutGrid } from 'lucide-react'
 
 export default async function DashboardPage() {
+  // Auth via cookie
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
+  // Admin client para queries de banco (bypassa RLS)
+  const db = createAdminClient()
+
+  const { data: profile } = await db
     .from('profiles')
     .select('role, name')
     .eq('id', user.id)
@@ -18,7 +23,7 @@ export default async function DashboardPage() {
 
   const isAdmin = profile?.role === 'admin'
 
-  let query = supabase
+  let query = db
     .from('cases')
     .select(`id, titulo, objeto, estado, status, created_at, documents(id)`)
     .order('created_at', { ascending: false })
@@ -44,7 +49,9 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
-          <p className="text-zinc-500 text-sm">{greeting}, <span className="text-zinc-300">{firstName}</span></p>
+          <p className="text-zinc-500 text-sm">
+            {greeting}, <span className="text-zinc-300 font-medium">{firstName}</span>
+          </p>
           <h1 className="text-2xl font-bold text-white mt-0.5">Painel de Processos</h1>
         </div>
         <Link href="/analise/nova">
@@ -88,14 +95,12 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Cases grid */}
+      {/* Cases */}
       {all.length > 0 ? (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-zinc-500 text-sm">
-              {stats.total} {stats.total === 1 ? 'processo' : 'processos'}
-            </p>
-          </div>
+          <p className="text-zinc-500 text-sm mb-4">
+            {stats.total} {stats.total === 1 ? 'processo' : 'processos'} encontrado{stats.total !== 1 ? 's' : ''}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {all.map((c) => (
               <CaseCard
@@ -133,11 +138,7 @@ export default async function DashboardPage() {
 }
 
 function StatCard({
-  label,
-  value,
-  icon,
-  color,
-  valueColor = 'text-white',
+  label, value, icon, color, valueColor = 'text-white',
 }: {
   label: string
   value: number

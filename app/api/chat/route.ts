@@ -6,7 +6,6 @@ import { openai, MODELS } from '@/lib/openai'
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  // Auth via cookie session
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -18,13 +17,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'caseId e message são obrigatórios' }, { status: 400 })
   }
 
-  // Admin client bypassa RLS para todas as operações de banco
   const db = createAdminClient()
 
-  // Verifica acesso ao caso
+  // Carrega TODOS os dados do caso para contexto completo
   const { data: caseData } = await db
     .from('cases')
-    .select('user_id, objeto')
+    .select(`
+      id, user_id, titulo, objeto, estado, comentario, status, created_at,
+      documents(name, size_bytes),
+      analyses(content, modelo_usado, model_ai, created_at)
+    `)
     .eq('id', caseId)
     .single()
 
@@ -40,22 +42,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Busca análise principal como contexto
-  const { data: analysis } = await db
-    .from('analyses')
-    .select('content')
-    .eq('case_id', caseId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-
-  // Busca histórico de mensagens (últimas 20)
+  // Histórico de mensagens (últimas 30)
   const { data: previousMessages } = await db
     .from('messages')
     .select('role, content')
     .eq('case_id', caseId)
     .order('created_at', { ascending: true })
-    .limit(20)
+    .limit(30)
 
   // Salva mensagem do usuário
   await db.from('messages').insert({
@@ -64,16 +57,47 @@ export async function POST(req: NextRequest) {
     content: message.trim(),
   })
 
-  // Monta contexto para a IA
-  const systemPrompt = `Você é um assistente jurídico do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especializado em direito do consumidor e regulação de energia elétrica (ENERGISA).
+  // Análise mais recente
+  const analyses = caseData.analyses as Array<{ content: string; modelo_usado: string; model_ai: string }> ?? []
+  const analysis = analyses.sort ? analyses[analyses.length - 1] : null
 
-O advogado está trabalhando em um processo de "${caseData.objeto}".
+  // Documentos do caso
+  const docs = (caseData.documents as Array<{ name: string; size_bytes: number }> ?? [])
+  const docList = docs.map(d => `• ${d.name}`).join('\n')
 
-${analysis ? `ANÁLISE PRÉVIA DA IA PARA ESTE CASO:\n${analysis.content}` : 'Nenhuma análise foi gerada ainda para este caso.'}
+  // System prompt com contexto COMPLETO e específico
+  const systemPrompt = `Você é um assistente jurídico especializado do escritório SAVA (Sebadelhe Aranha & Vasconcelos), com expertise em direito do consumidor e regulação de energia elétrica — especialmente processos envolvendo a ENERGISA e a ANEEL (REN 1.000/2021, PRODIST, Código Civil, CDC).
 
-Responda às perguntas do advogado de forma objetiva, técnica e embasada juridicamente. Quando citar artigos ou resoluções, seja preciso.`
+═══════════════════════════════════════
+DADOS DO PROCESSO EM ANÁLISE
+═══════════════════════════════════════
+Identificação: ${caseData.titulo || '(sem título)'}
+Objeto da ação: ${caseData.objeto}
+Estado/jurisdição: ${caseData.estado || 'Não especificado'}
+Data de cadastro: ${new Date(caseData.created_at).toLocaleDateString('pt-BR')}
+Status: ${caseData.status}
+${caseData.comentario ? `\nInstrução do advogado: "${caseData.comentario}"` : ''}
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+Documentos enviados:
+${docList || '(nenhum documento listado)'}
+
+═══════════════════════════════════════
+ANÁLISE COMPLETA GERADA PELA IA
+═══════════════════════════════════════
+${analysis ? `Modelo: ${analysis.model_ai} — ${analysis.modelo_usado}\n\n${analysis.content}` : 'Nenhuma análise disponível para este caso ainda.'}
+
+═══════════════════════════════════════
+REGRAS DE RESPOSTA — SIGA RIGOROSAMENTE
+═══════════════════════════════════════
+1. Responda SEMPRE com base específica neste processo — não use respostas genéricas.
+2. Quando a pergunta se referir a algo que está na análise acima, cite diretamente o trecho relevante.
+3. Seja direto e objetivo: vá ao ponto sem rodeios.
+4. Use linguagem jurídica precisa — cite artigos, resoluções e súmulas relevantes para ESTE caso.
+5. Se identificar risco ou ponto fraco neste processo específico, aponte claramente.
+6. Se a pergunta não puder ser respondida com base nos dados disponíveis, diga exatamente o que falta.
+7. Jamais invente fatos sobre o processo — baseie-se apenas no que está acima.`
+
+  const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
     ...(previousMessages?.map((m) => ({
       role: m.role as 'user' | 'assistant',
@@ -86,9 +110,9 @@ Responda às perguntas do advogado de forma objetiva, técnica e embasada juridi
 
   const stream = await openai.chat.completions.create({
     model: MODELS.primary,
-    messages,
+    messages: chatMessages,
     stream: true,
-    temperature: 0.3,
+    temperature: 0.2,
   })
 
   const encoder = new TextEncoder()
@@ -103,7 +127,6 @@ Responda às perguntas do advogado de forma objetiva, técnica e embasada juridi
         }
       }
 
-      // Salva resposta do assistente
       await db.from('messages').insert({
         case_id: caseId,
         role: 'assistant',
