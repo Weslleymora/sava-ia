@@ -110,7 +110,7 @@ export default function LoginPage() {
         </p>
 
         <p className="text-center text-zinc-600 text-xs mt-2">
-          SAVA — Sebadelhe Aranha & Vasconcelos
+          SAVA — Sebadelhe Aranha & Vasconcelos &nbsp;·&nbsp; v1.1
         </p>
       </div>
     </div>
