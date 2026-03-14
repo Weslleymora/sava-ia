@@ -103,9 +103,9 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-zinc-600 text-xs mt-4">
-          Primeiro acesso?{' '}
-          <a href="/setup" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
-            Configurar sistema
+          Não tem uma conta?{' '}
+          <a href="/register" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
+            Criar conta
           </a>
         </p>
 
