@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   const { error: profileError } = await adminSupabase
     .from('profiles')
-    .upsert({ id: newUser.user.id, name, role: 'user', active: true })
+    .upsert({ id: newUser.user.id, name, role: 'advogado', active: true })
 
   if (profileError) {
     await adminSupabase.auth.admin.deleteUser(newUser.user.id)
