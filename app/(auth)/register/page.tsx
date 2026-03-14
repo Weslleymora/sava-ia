@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,7 +9,6 @@ import { Loader2, Scale, UserPlus } from 'lucide-react'
 
 export default function RegisterPage() {
   const router = useRouter()
-  const supabase = createClient()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -18,7 +16,6 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -31,69 +28,21 @@ export default function RegisterPage() {
       return
     }
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name },
-      },
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
     })
 
-    if (signUpError) {
-      setError(signUpError.message ?? 'Erro ao criar conta.')
+    const data = await res.json()
+
+    if (!res.ok) {
+      setError(data.error ?? 'Erro ao criar conta.')
       setLoading(false)
       return
     }
 
-    // Se o usuário foi criado e confirmado automaticamente, criar perfil
-    if (data.user && data.session) {
-      await supabase
-        .from('profiles')
-        .upsert({ id: data.user.id, name, role: 'user', active: true })
-
-      router.push('/dashboard')
-      router.refresh()
-      return
-    }
-
-    // Se precisa confirmar e-mail
-    setSuccess(true)
-    setLoading(false)
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-violet-600/20 border border-violet-500/30 mb-4">
-              <Scale className="w-8 h-8 text-violet-400" />
-            </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">SAVA IA</h1>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-500/20 border border-green-500/30 mb-4">
-              <UserPlus className="w-6 h-6 text-green-400" />
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Conta criada!</h2>
-            <p className="text-zinc-400 text-sm mb-6">
-              Enviamos um link de confirmação para <strong className="text-white">{email}</strong>. Verifique sua caixa de entrada e clique no link para ativar sua conta.
-            </p>
-            <Button
-              onClick={() => router.push('/login')}
-              className="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-5 rounded-xl transition-all"
-            >
-              Ir para o login
-            </Button>
-          </div>
-
-          <p className="text-center text-zinc-600 text-xs mt-6">
-            SAVA — Sebadelhe Aranha & Vasconcelos
-          </p>
-        </div>
-      </div>
-    )
+    router.push('/login?cadastro=ok')
   }
 
   return (
@@ -199,7 +148,7 @@ export default function RegisterPage() {
         </p>
 
         <p className="text-center text-zinc-600 text-xs mt-2">
-          SAVA — Sebadelhe Aranha & Vasconcelos
+          SAVA — Sebadelhe Aranha & Vasconcelos &nbsp;·&nbsp; v1.1
         </p>
       </div>
     </div>
