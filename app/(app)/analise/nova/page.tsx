@@ -68,6 +68,14 @@ export default function NovaAnalisePage() {
     // Gera o ID do caso no cliente para usar como caminho no Storage
     const caseId = crypto.randomUUID()
 
+    // Sanitiza nome para uso no Storage (remove acentos, espaços e chars especiais)
+    function sanitizeFileName(name: string): string {
+      return name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+        .replace(/[^a-zA-Z0-9._-]/g, '_')                // substitui chars inválidos
+        .replace(/_+/g, '_')                              // colapsa múltiplos _
+    }
+
     // 1. Upload direto para Supabase Storage (sem passar pelo Next.js)
     const uploadedFiles: { name: string; size: number; type: string; storagePath: string }[] = []
     try {
@@ -75,12 +83,14 @@ export default function NovaAnalisePage() {
         const file = files[i]
         setPct(Math.round(5 + ((i + 1) / files.length) * 10))
 
-        const storagePath = `${user.id}/${caseId}/${file.name}`
+        const safeName = sanitizeFileName(file.name)
+        const storagePath = `${user.id}/${caseId}/${safeName}`
         const { error: uploadError } = await supabase.storage
           .from('documents')
           .upload(storagePath, file, { contentType: file.type, upsert: true })
 
         if (uploadError) throw new Error(`Erro ao enviar "${file.name}": ${uploadError.message}`)
+        // name original preservado para exibição; storagePath usa nome sanitizado
         uploadedFiles.push({ name: file.name, size: file.size, type: file.type, storagePath })
       }
     } catch (err) {
