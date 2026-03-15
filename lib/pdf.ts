@@ -87,20 +87,13 @@ function truncate(text: string, max: number, fileName?: string): string {
 // Renderiza páginas de um PDF escaneado como imagens PNG (para OCR via Vision)
 export async function renderPdfToImages(buffer: Buffer, maxPages = 15): Promise<Buffer[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const canvasPkg = require('canvas') as {
+  const { createCanvas } = require('canvas') as {
     createCanvas: (w: number, h: number) => { getContext: (t: string) => unknown; toBuffer: (f: string) => Buffer }
-    DOMMatrix: typeof DOMMatrix
-  }
-  const { createCanvas } = canvasPkg
-
-  // pdfjs-dist v5 exige DOMMatrix — polyfill via canvas para Node.js
-  if (typeof globalThis.DOMMatrix === 'undefined') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(globalThis as any).DOMMatrix = canvasPkg.DOMMatrix
   }
 
-  // pdfjs-dist v5 é ESM — usar import dinâmico
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs') as unknown as {
+  // pdfjs-dist v3 — CommonJS, funciona em Node.js sem polyfills de browser
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js') as {
     getDocument: (opts: { data: Uint8Array }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<unknown> }> }
     GlobalWorkerOptions: { workerSrc: string }
   }
