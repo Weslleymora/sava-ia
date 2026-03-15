@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import FileUploader from '@/components/FileUploader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,16 +16,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { OBJETOS_ENERGISA, ESTADOS_BRASIL } from '@/lib/prompts'
-import { Loader2, Send, Scale, FileText, MessageSquare, Sparkles } from 'lucide-react'
+import { Loader2, Send, Scale, FileText, MessageSquare, Sparkles, UploadCloud } from 'lucide-react'
 import { toast } from 'sonner'
 
 const STEPS = [
-  { icon: FileText,     label: 'Lendo documentos...',      pct: 15 },
-  { icon: Scale,        label: 'Extraindo texto...',        pct: 30 },
-  { icon: Sparkles,     label: 'Aplicando prompt jurídico...', pct: 50 },
-  { icon: Loader2,      label: 'Consultando IA...',         pct: 65 },
-  { icon: MessageSquare,label: 'Gerando análise...',        pct: 85 },
-  { icon: Sparkles,     label: 'Finalizando ficha...',      pct: 96 },
+  { icon: UploadCloud,   label: 'Enviando arquivos...',         pct: 15 },
+  { icon: FileText,      label: 'Lendo documentos...',           pct: 30 },
+  { icon: Scale,         label: 'Extraindo texto...',             pct: 45 },
+  { icon: Sparkles,      label: 'Aplicando prompt jurídico...',  pct: 60 },
+  { icon: Loader2,       label: 'Consultando IA...',              pct: 75 },
+  { icon: MessageSquare, label: 'Gerando análise...',             pct: 90 },
+  { icon: Sparkles,      label: 'Finalizando ficha...',           pct: 96 },
 ]
 
 export default function NovaAnalisePage() {
@@ -55,17 +57,46 @@ export default function NovaAnalisePage() {
     setStepIdx(0)
     setPct(5)
 
-    const fd = new FormData()
-    fd.append('objeto', objeto)
-    if (estado) fd.append('estado', estado)
-    if (comentario.trim()) fd.append('comentario', comentario.trim())
-    if (titulo.trim()) fd.append('titulo', titulo.trim())
-    files.forEach((f) => fd.append('files', f))
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      toast.error('Sessão expirada. Faça login novamente.')
+      setLoading(false)
+      return
+    }
+
+    // Gera o ID do caso no cliente para usar como caminho no Storage
+    const caseId = crypto.randomUUID()
+
+    // 1. Upload direto para Supabase Storage (sem passar pelo Next.js)
+    const uploadedFiles: { name: string; size: number; type: string; storagePath: string }[] = []
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        setPct(Math.round(5 + ((i + 1) / files.length) * 10))
+
+        const storagePath = `${user.id}/${caseId}/${file.name}`
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, file, { contentType: file.type, upsert: true })
+
+        if (uploadError) throw new Error(`Erro ao enviar "${file.name}": ${uploadError.message}`)
+        uploadedFiles.push({ name: file.name, size: file.size, type: file.type, storagePath })
+      }
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Erro ao enviar arquivos.')
+      setLoading(false)
+      setPct(0)
+      return
+    }
+
+    setStepIdx(1)
+    setPct(STEPS[1].pct)
 
     abortRef.current = new AbortController()
 
-    // Avança steps automaticamente enquanto aguarda
-    let currentStep = 0
+    // Avança steps automaticamente enquanto a API processa
+    let currentStep = 1
     const stepTimer = setInterval(() => {
       currentStep = Math.min(currentStep + 1, STEPS.length - 1)
       setStepIdx(currentStep)
@@ -73,9 +104,18 @@ export default function NovaAnalisePage() {
     }, 3500)
 
     try {
+      // 2. Chama API com JSON pequeno (sem arquivos) — sem risco de 413
       const res = await fetch('/api/analyze', {
         method: 'POST',
-        body: fd,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseId,
+          files: uploadedFiles,
+          objeto,
+          estado: estado || null,
+          comentario: comentario.trim() || null,
+          titulo: titulo.trim() || null,
+        }),
         signal: abortRef.current.signal,
       })
 
@@ -86,15 +126,14 @@ export default function NovaAnalisePage() {
           errorMsg = err.error ?? errorMsg
         } catch {
           const text = await res.text().catch(() => '')
-          if (res.status === 413) errorMsg = 'Arquivos muito grandes. Reduza o tamanho total e tente novamente.'
-          else if (text) errorMsg = text.slice(0, 120)
+          if (text) errorMsg = text.slice(0, 120)
         }
         throw new Error(errorMsg)
       }
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
-      let caseId: string | null = null
+      let caseIdFromServer: string | null = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -105,21 +144,21 @@ export default function NovaAnalisePage() {
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.caseId && !caseId) caseId = data.caseId
-            if (data.done && caseId) {
+            if (data.caseId && !caseIdFromServer) caseIdFromServer = data.caseId
+            if (data.done && caseIdFromServer) {
               clearInterval(stepTimer)
               setPct(100)
-              setTimeout(() => router.push(`/analise/${caseId}`), 400)
+              setTimeout(() => router.push(`/analise/${caseIdFromServer}`), 400)
               return
             }
           } catch { /* ignora */ }
         }
       }
 
-      if (caseId) {
+      if (caseIdFromServer) {
         clearInterval(stepTimer)
         setPct(100)
-        setTimeout(() => router.push(`/analise/${caseId}`), 400)
+        setTimeout(() => router.push(`/analise/${caseIdFromServer}`), 400)
       }
     } catch (err: unknown) {
       clearInterval(stepTimer)
@@ -135,7 +174,6 @@ export default function NovaAnalisePage() {
   if (loading) {
     return (
       <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center z-50">
-        {/* Background grid */}
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
@@ -143,21 +181,16 @@ export default function NovaAnalisePage() {
             backgroundSize: '40px 40px',
           }}
         />
-
-        {/* Glow */}
         <div className="absolute w-96 h-96 bg-violet-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative text-center px-8 max-w-sm w-full">
-          {/* Icon animado */}
           <div className="w-20 h-20 rounded-2xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-8 shadow-lg shadow-violet-500/10">
             <currentStep.icon className="w-9 h-9 text-violet-400 animate-pulse" />
           </div>
 
-          {/* Texto */}
           <h2 className="text-xl font-bold text-white mb-2">Analisando com IA</h2>
           <p className="text-zinc-400 text-sm mb-8 leading-relaxed">{currentStep.label}</p>
 
-          {/* Progress bar */}
           <div className="w-full bg-zinc-800 rounded-full h-1.5 mb-3 overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full transition-all duration-700 ease-out"
@@ -166,7 +199,6 @@ export default function NovaAnalisePage() {
           </div>
           <p className="text-zinc-600 text-xs">{pct}%</p>
 
-          {/* Steps indicadores */}
           <div className="flex justify-center gap-1.5 mt-6">
             {STEPS.map((_, i) => (
               <span

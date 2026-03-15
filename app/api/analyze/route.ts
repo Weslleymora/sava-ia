@@ -74,6 +74,13 @@ ${analysisContent}`,
   return res.choices[0]?.message?.content ?? ''
 }
 
+interface FileInfo {
+  name: string
+  size: number
+  type: string
+  storagePath: string
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -81,26 +88,33 @@ export async function POST(req: NextRequest) {
 
   const db = createAdminClient()
 
-  let formData: FormData
-  try {
-    formData = await req.formData()
-  } catch {
-    return NextResponse.json({ error: 'Erro ao ler os arquivos. O total pode ter ultrapassado o limite de tamanho.' }, { status: 413 })
+  const body = await req.json() as {
+    caseId: string
+    files: FileInfo[]
+    objeto: string
+    estado: string | null
+    comentario: string | null
+    titulo: string | null
   }
 
-  const objeto = formData.get('objeto') as string
-  const estado = formData.get('estado') as string | null
-  const comentario = formData.get('comentario') as string | null
-  const titulo = formData.get('titulo') as string | null
-  const files = formData.getAll('files') as File[]
+  const { caseId, files, objeto, estado, comentario, titulo } = body
 
+  if (!caseId) return NextResponse.json({ error: 'caseId é obrigatório' }, { status: 400 })
   if (!objeto) return NextResponse.json({ error: 'Objeto é obrigatório' }, { status: 400 })
   if (!files || files.length === 0) return NextResponse.json({ error: 'Envie ao menos 1 arquivo' }, { status: 400 })
 
-  // 1. Cria o caso
+  // Verifica que cada arquivo pertence ao usuário autenticado
+  for (const f of files) {
+    if (!f.storagePath.startsWith(`${user.id}/`)) {
+      return NextResponse.json({ error: 'Acesso negado ao arquivo.' }, { status: 403 })
+    }
+  }
+
+  // 1. Cria o caso com o ID gerado pelo cliente
   const { data: caseData, error: caseError } = await db
     .from('cases')
     .insert({
+      id: caseId,
       user_id: user.id,
       titulo: titulo || null,
       objeto,
@@ -116,34 +130,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Erro ao criar caso: ${caseError?.message ?? 'desconhecido'}` }, { status: 500 })
   }
 
-  const caseId = caseData.id
-
   try {
-    // 2. Processa arquivos
+    // 2. Baixa e processa arquivos do Supabase Storage
     const texts: string[] = []
     const fileNames: string[] = []
 
-    for (const file of files) {
-      const arrayBuffer = await file.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
+    for (const fileInfo of files) {
+      const { data: fileBlob, error: downloadError } = await db.storage
+        .from('documents')
+        .download(fileInfo.storagePath)
 
-      const storagePath = `${user.id}/${caseId}/${file.name}`
-      await db.storage.from('documents').upload(storagePath, buffer, { contentType: file.type, upsert: true })
+      if (downloadError || !fileBlob) {
+        throw new Error(`Erro ao ler "${fileInfo.name}": ${downloadError?.message ?? 'arquivo não encontrado'}`)
+      }
+
+      const buffer = Buffer.from(await fileBlob.arrayBuffer())
+
       await db.from('documents').insert({
         case_id: caseId,
-        name: file.name,
-        storage_path: storagePath,
-        size_bytes: file.size,
+        name: fileInfo.name,
+        storage_path: fileInfo.storagePath,
+        size_bytes: fileInfo.size,
       })
 
       let text: string
-      if (isImage(file.type, file.name)) {
-        text = await extractTextFromImage(buffer, file.type, file.name)
+      if (isImage(fileInfo.type, fileInfo.name)) {
+        text = await extractTextFromImage(buffer, fileInfo.type, fileInfo.name)
       } else {
-        text = await extractTextFromFile(buffer, file.type, file.name)
+        text = await extractTextFromFile(buffer, fileInfo.type, fileInfo.name)
       }
       texts.push(text)
-      fileNames.push(file.name)
+      fileNames.push(fileInfo.name)
     }
 
     // 3. Gera análise principal via streaming
@@ -184,7 +201,7 @@ export async function POST(req: NextRequest) {
 
         await db.from('cases').update({ status: 'done' }).eq('id', caseId)
 
-        // 5. Gera resumo executivo em background (gpt-4o-mini, econômico)
+        // 5. Gera resumo executivo em background
         gerarResumo(analysisContent, objeto, titulo)
           .then(resumo => {
             if (resumo) {
