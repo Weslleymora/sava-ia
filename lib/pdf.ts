@@ -15,11 +15,11 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string, file
       const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
       const data = await pdfParse(buffer)
       const text = (data.text || '').trim()
-      if (!text) throw new Error('PDF sem texto extraível')
+      if (!text) throw new Error('scanned')
       return text
-    } catch (err) {
-      console.error('Erro ao extrair texto do PDF:', err)
-      throw new Error(`Não foi possível extrair texto de "${fileName}". O PDF pode estar protegido ou ser baseado em imagem (escaneado).`)
+    } catch {
+      // PDF escaneado ou sem texto — sinaliza para OCR via Vision
+      throw new Error(`SCANNED_PDF:${fileName}`)
     }
   }
 
@@ -82,6 +82,37 @@ function truncate(text: string, max: number, fileName?: string): string {
     text.slice(0, max) +
     `\n\n[... texto${label} truncado — documento muito extenso. As primeiras ${max.toLocaleString('pt-BR')} caracteres foram analisadas.]`
   )
+}
+
+// Renderiza páginas de um PDF escaneado como imagens PNG (para OCR via Vision)
+export async function renderPdfToImages(buffer: Buffer, maxPages = 15): Promise<Buffer[]> {
+  // pdfjs-dist v5 é ESM — usar import dinâmico
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs') as unknown as {
+    getDocument: (opts: { data: Uint8Array }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<unknown> }> }
+    GlobalWorkerOptions: { workerSrc: string }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createCanvas } = require('canvas') as { createCanvas: (w: number, h: number) => { getContext: (t: string) => unknown; toBuffer: (f: string) => Buffer } }
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+  const total = Math.min(pdf.numPages, maxPages)
+  const pages: Buffer[] = []
+
+  for (let i = 1; i <= total; i++) {
+    const page = await pdf.getPage(i) as {
+      getViewport: (opts: { scale: number }) => { width: number; height: number }
+      render: (opts: { canvasContext: unknown; viewport: unknown }) => { promise: Promise<void> }
+    }
+    const viewport = page.getViewport({ scale: 1.5 })
+    const canvas = createCanvas(viewport.width, viewport.height)
+    const ctx = canvas.getContext('2d')
+    await page.render({ canvasContext: ctx, viewport }).promise
+    pages.push(canvas.toBuffer('image/png'))
+  }
+
+  return pages
 }
 
 export function concatenateTexts(texts: string[], fileNames?: string[]): string {

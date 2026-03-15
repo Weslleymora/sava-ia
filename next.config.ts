@@ -3,7 +3,7 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   // Necessário para pdf-parse (usa módulos Node.js nativos)
-  serverExternalPackages: ['pdf-parse', 'mammoth'],
+  serverExternalPackages: ['pdf-parse', 'mammoth', 'canvas', 'pdfjs-dist'],
   turbopack: {
     root: path.resolve(__dirname),
   },

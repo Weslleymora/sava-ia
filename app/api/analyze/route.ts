@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { openai } from '@/lib/openai'
-import { extractTextFromFile, concatenateTexts } from '@/lib/pdf'
+import { extractTextFromFile, concatenateTexts, renderPdfToImages } from '@/lib/pdf'
 import { getPromptConfig } from '@/lib/prompts'
 
 export const maxDuration = 120
@@ -157,7 +157,24 @@ export async function POST(req: NextRequest) {
       if (isImage(fileInfo.type, fileInfo.name)) {
         text = await extractTextFromImage(buffer, fileInfo.type, fileInfo.name)
       } else {
-        text = await extractTextFromFile(buffer, fileInfo.type, fileInfo.name)
+        try {
+          text = await extractTextFromFile(buffer, fileInfo.type, fileInfo.name)
+        } catch (err) {
+          const msg = (err as Error).message ?? ''
+          if (msg.startsWith('SCANNED_PDF:')) {
+            // PDF escaneado — renderiza páginas e usa OCR via GPT-4o Vision
+            console.log(`[analyze] PDF escaneado detectado: "${fileInfo.name}" — iniciando OCR`)
+            const pages = await renderPdfToImages(buffer)
+            const pageTexts = await Promise.all(
+              pages.map((img, i) =>
+                extractTextFromImage(img, 'image/png', `${fileInfo.name} — p.${i + 1}`)
+              )
+            )
+            text = pageTexts.join('\n\n')
+          } else {
+            throw err
+          }
+        }
       }
       texts.push(text)
       fileNames.push(fileInfo.name)
