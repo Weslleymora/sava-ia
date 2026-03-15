@@ -121,6 +121,7 @@ export async function POST(req: NextRequest) {
   try {
     // 2. Processa arquivos
     const texts: string[] = []
+    const fileNames: string[] = []
 
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer()
@@ -142,11 +143,12 @@ export async function POST(req: NextRequest) {
         text = await extractTextFromFile(buffer, file.type, file.name)
       }
       texts.push(text)
+      fileNames.push(file.name)
     }
 
     // 3. Gera análise principal via streaming
     const promptConfig = getPromptConfig(objeto)
-    const documentText = concatenateTexts(texts)
+    const documentText = concatenateTexts(texts, fileNames)
     const prompt = promptConfig.buildPrompt(documentText, comentario || undefined)
 
     let analysisContent = ''

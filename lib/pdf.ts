@@ -70,8 +70,28 @@ export async function extractTextFromFile(buffer: Buffer, mimeType: string, file
   )
 }
 
-export function concatenateTexts(texts: string[]): string {
-  return texts
-    .map((t, i) => (texts.length > 1 ? `=== DOCUMENTO ${i + 1} ===\n\n${t}` : t))
+// Limite por documento: ~120k chars ≈ 30k tokens (seguro para gpt-4o 128k context)
+const MAX_CHARS_PER_DOC = 120_000
+// Limite total (múltiplos documentos)
+const MAX_CHARS_TOTAL = 200_000
+
+function truncate(text: string, max: number, fileName?: string): string {
+  if (text.length <= max) return text
+  const label = fileName ? ` de "${fileName}"` : ''
+  return (
+    text.slice(0, max) +
+    `\n\n[... texto${label} truncado — documento muito extenso. As primeiras ${max.toLocaleString('pt-BR')} caracteres foram analisadas.]`
+  )
+}
+
+export function concatenateTexts(texts: string[], fileNames?: string[]): string {
+  const truncated = texts.map((t, i) =>
+    truncate(t, MAX_CHARS_PER_DOC, fileNames?.[i])
+  )
+
+  const joined = truncated
+    .map((t, i) => (truncated.length > 1 ? `=== DOCUMENTO ${i + 1} ===\n\n${t}` : t))
     .join('\n\n')
+
+  return truncate(joined, MAX_CHARS_TOTAL)
 }

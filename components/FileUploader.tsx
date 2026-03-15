@@ -1,9 +1,12 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { useDropzone } from 'react-dropzone'
-import { X, FileText, UploadCloud } from 'lucide-react'
+import { useDropzone, FileRejection } from 'react-dropzone'
+import { X, FileText, UploadCloud, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024  // 20 MB por arquivo
+const MAX_TOTAL_SIZE = 40 * 1024 * 1024 // 40 MB total
 
 interface FileUploaderProps {
   onChange: (files: File[]) => void
@@ -18,10 +21,34 @@ function formatBytes(bytes: number) {
 
 export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderProps) {
   const [files, setFiles] = useState<File[]>([])
+  const [rejections, setRejections] = useState<string[]>([])
 
   const onDrop = useCallback(
-    (accepted: File[]) => {
+    (accepted: File[], rejected: FileRejection[]) => {
+      const errors: string[] = []
+
+      // Rejeições do dropzone (tipo inválido, excesso de arquivos)
+      for (const { file, errors: errs } of rejected) {
+        if (errs.some(e => e.code === 'file-too-large')) {
+          errors.push(`"${file.name}" excede 20 MB`)
+        } else if (errs.some(e => e.code === 'too-many-files')) {
+          errors.push(`"${file.name}" ignorado — limite de ${maxFiles} arquivos`)
+        } else {
+          errors.push(`"${file.name}" formato não suportado`)
+        }
+      }
+
       const merged = [...files, ...accepted].slice(0, maxFiles)
+
+      // Verificar tamanho total
+      const totalSize = merged.reduce((sum, f) => sum + f.size, 0)
+      if (totalSize > MAX_TOTAL_SIZE) {
+        errors.push(`Total de arquivos excede 40 MB. Reduza a quantidade ou o tamanho dos arquivos.`)
+        setRejections(errors)
+        return
+      }
+
+      setRejections(errors)
       setFiles(merged)
       onChange(merged)
     },
@@ -40,13 +67,17 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
       'image/webp': ['.webp'],
     },
     maxFiles: maxFiles - files.length,
+    maxSize: MAX_FILE_SIZE,
   })
 
   function removeFile(index: number) {
     const updated = files.filter((_, i) => i !== index)
     setFiles(updated)
     onChange(updated)
+    setRejections([])
   }
+
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0)
 
   return (
     <div className="space-y-3">
@@ -64,8 +95,21 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
         <p className="text-sm font-medium text-zinc-300">
           {isDragActive ? 'Solte os arquivos aqui' : 'Clique ou arraste os arquivos'}
         </p>
-        <p className="text-xs text-zinc-500 mt-1">PDF, DOCX, DOC, TXT ou imagem • Até {maxFiles} arquivos</p>
+        <p className="text-xs text-zinc-500 mt-1">
+          PDF, DOCX, DOC, TXT ou imagem • Até {maxFiles} arquivos • Máx. 20 MB por arquivo
+        </p>
       </div>
+
+      {rejections.length > 0 && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 space-y-1">
+          {rejections.map((msg, i) => (
+            <div key={i} className="flex items-center gap-2 text-red-400 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {msg}
+            </div>
+          ))}
+        </div>
+      )}
 
       {files.length > 0 && (
         <div className="space-y-2">
@@ -88,6 +132,12 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
               </button>
             </div>
           ))}
+
+          {files.length > 1 && (
+            <p className="text-xs text-zinc-500 text-right pr-1">
+              Total: {formatBytes(totalSize)}
+            </p>
+          )}
         </div>
       )}
     </div>
