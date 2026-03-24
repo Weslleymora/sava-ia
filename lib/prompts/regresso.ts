@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const regressoPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA em AÇÕES REGRESSIVAS movidas por seguradoras ou terceiros sub-rogados que pagaram indenização a consumidores e pretendem reaver o valor da concessionária.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, datas, valores, dados da seguradora, data do sinistro, data do ajuizamento
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — calcule prazos de prescrição com as datas dos documentos
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — AÇÃO REGRESSIVA
@@ -71,7 +93,7 @@ MODELO 7 — CULPA EXCLUSIVA DO CONSUMIDOR (Excludente Total)
 • Documentos úteis: Laudo elétrico interno, histórico de manutenção, capacidade nominal dos equipamentos
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — AÇÃO REGRESSIVA / ENERGISA
+FICHA DE ANÁLISE — AÇÃO REGRESSIVA / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -107,7 +129,55 @@ FICHA DE ANÁLISE — AÇÃO REGRESSIVA / ENERGISA
 • Recomendações Imediatas: [ações urgentes]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando informações ESPECÍFICAS dos documentos: data do sinistro, evento causador, valor cobrado em regresso, nome da seguradora autora, segurado original, data do pagamento pela seguradora, data do ajuizamento, Grupo de fornecimento (A ou B). Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. [Se aplicável] Da Prescrição da Ação
+[Calcular prescrição com as datas concretas dos documentos:
+- Para seguradoras: prazo de 1 ano (Art. 206, §1º, II CC) contado da data do pagamento ao segurado
+- Para outros sub-rogados: prazo de 3 anos (Art. 206, §3º, V CC)
+Se prescrita: "O evento ocorreu em [DATA] e o pagamento ao segurado foi realizado em [DATA]. A ação foi ajuizada em [DATA], após o prazo de [1/3 ano(s)] previsto no art. 206, [§], [inciso] do Código Civil. Requer-se o reconhecimento da prescrição e extinção do processo."]
+
+2.2. Da Inexistência de Nexo Causal
+[Com base nos registros do PRODIST: "Não houve qualquer perturbação elétrica registrada nos sistemas da ENERGISA na data de [DATA], conforme registros do PRODIST/Módulo 9. Nos termos do art. 621, inciso I, da REN ANEEL nº 1.000/2021, exclui-se a responsabilidade da distribuidora quando não comprovada a perturbação na rede."]
+
+2.3. [Se Grupo A] Da Responsabilidade da Instalação do Consumidor
+Nos termos do art. 30 da REN ANEEL nº 1.000/2021, o cliente do Grupo A (alta tensão) é responsável por toda a instalação elétrica a partir do ponto de entrega da energia, incluindo subestação, transformador, painéis de proteção e equipamentos internos. O dano alegado ocorreu em área de responsabilidade do próprio segurado.
+
+2.4. Da Fragilidade Probatória do Laudo Apresentado
+Nos termos do Tema 1.282 do Superior Tribunal de Justiça, laudos técnicos unilaterais, elaborados sem CREA, sem análise dos registros da rede distribuidora, com conclusão genérica, possuem valor probatório reduzido. A prova técnica robusta exige perícia judicial imparcial.
+
+2.5. [Se aplicável] Da Sub-rogação Não Comprovada
+A sub-rogação nos termos do art. 786 do Código Civil só opera após o efetivo pagamento pelo segurador ao segurado. A autora não juntou prova cabal do pagamento (apólice vigente + recibo de quitação com o segurado).
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) O reconhecimento da prescrição e extinção do processo, se aplicável (art. 487, II CPC);
+b) A improcedência total dos pedidos formulados na inicial;
+c) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC;
+d) A realização de perícia técnica para apuração do nexo causal.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

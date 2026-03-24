@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const serasaProtestoPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA em ações envolvendo INSCRIÇÃO NO SERASA/SPC, PROTESTO EM CARTÓRIO, TRANSFERÊNCIA DE TITULARIDADE, PARCELAMENTO DE DÉBITO e FALHA NO PAGAMENTO.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, CPF, datas, valores, número da UC, número do processo
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — nunca argumento sem fundamento legal
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — NEGATIVAÇÃO / PROTESTO
@@ -67,7 +89,7 @@ MODELO 7 — PROTESTO INDEVIDO / ERRO SISTÊMICO
 • Atenção: Nesse cenário a defesa é mais fraca — avaliar a possibilidade de acordo extrajudicial
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — SERASA/PROTESTO / ENERGISA
+FICHA DE ANÁLISE — SERASA/PROTESTO / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -104,7 +126,47 @@ FICHA DE ANÁLISE — SERASA/PROTESTO / ENERGISA
 • Recomendações Imediatas: [ações urgentes]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], pessoa jurídica de direito privado, concessionária de serviço público de distribuição de energia elétrica, por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando as informações ESPECÍFICAS dos documentos: data da negativação/protesto, valor do débito, UC envolvida, se o autor nega o vínculo, se há TCD assinado, se há outras negativações preexistentes. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. Da Legalidade da Negativação/Protesto — Exercício Regular de Direito
+A inscrição do nome do Autor em cadastros de inadimplentes constitui exercício regular de direito, nos termos do art. 188, inciso I, do Código Civil, pois o débito no valor de R$ [VALOR — extrair dos autos] existe, é líquido e certo, e não foi quitado no prazo estipulado.
+
+[Desenvolver com fatos específicos: data de vencimento, data da negativação, comprovação do vínculo com a UC conforme Art. 140 da REN 1.000/2021]
+
+2.2. [Se aplicável] Da Aplicação da Súmula 385/STJ — Ausência de Dano Moral
+Nos termos da Súmula 385 do Superior Tribunal de Justiça, "da anotação irregular em cadastro de proteção ao crédito, não cabe indenização por dano moral, quando preexistente legítima inscrição." O Autor já possuía [outras inscrições negativas — verificar e listar] anteriores à negativação promovida pela ENERGISA, o que afasta qualquer pretensão indenizatória.
+
+2.3. [Se aplicável] Da Responsabilidade do Titular pelo Cancelamento do Protesto
+Nos termos do art. 26 da Lei nº 9.492/1997, após a quitação do débito, é obrigação do DEVEDOR providenciar o cancelamento do protesto, apresentando a carta de anuência do credor ao cartório. A ENERGISA está pronta a fornecer carta de anuência mediante comprovação da quitação, mas o ato de cancelamento é responsabilidade do autor.
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do Código de Processo Civil;
+c) A produção de todos os meios de prova em direito admitidos.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const ligacaoReligacaoPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA em ações de LIGAÇÃO NOVA, RELIGAÇÃO e PRAZO DE ATENDIMENTO.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, datas, protocolos, endereços, status da ligação
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — calcule prazos com as datas dos documentos
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — LIGAÇÃO NOVA / RELIGAÇÃO
@@ -66,7 +88,7 @@ MODELO 7 — ÁREA IRREGULAR / RISCO / PRESERVAÇÃO
 • Tese central: A ENERGISA não pode ligar energia em imóvel em situação irregular perante o poder público. A ligação dependeria de regularização prévia pelo autor/município. Não é omissão ilícita da concessionária — é vedação legal
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — LIGAÇÃO NOVA / RELIGAÇÃO / ENERGISA
+FICHA DE ANÁLISE — LIGAÇÃO NOVA / RELIGAÇÃO / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -102,7 +124,44 @@ FICHA DE ANÁLISE — LIGAÇÃO NOVA / RELIGAÇÃO / ENERGISA
 • Recomendações Imediatas: [ações urgentes — sobretudo se há risco de liminar]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando informações ESPECÍFICAS dos documentos: tipo da ação (ligação nova/religação), data do protocolo da solicitação, data do ajuizamento, status atual da ligação (realizada ou não, data), endereço do imóvel, documentação apresentada pelo autor. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. [Tese principal — desenvolver com base no Modelo identificado]
+[Exemplo Modelo 1 (dentro do prazo): "A solicitação foi protocolada em [DATA]. O prazo regulatório aplicável é de [7/15] dias úteis, nos termos do art. 73 da REN ANEEL nº 1.000/2021. A data-limite para atendimento é [DATA]. A ação foi ajuizada em [DATA], antes do vencimento do prazo legal. Ausência de mora — falta de interesse de agir."]
+[Exemplo Modelo 2 (já realizada): "A ligação foi realizada em [DATA], conforme OS nº [NÚMERO]. Ocorreu perda superveniente do objeto, nos termos do art. 485, inciso VI, do CPC."]
+[Exemplo Modelo 3 (pendência): "Nos termos do art. 67 da REN ANEEL nº 1.000/2021, a ligação requer documentação completa. A ENERGISA notificou o autor em [DATA] sobre a pendência de [DOCUMENTO]. O prazo regulatório só corre após entrega de documentação completa e aprovação da instalação interna."]
+
+2.2. [Se aplicável] Da Ausência de Dano Moral Indenizável
+O não atendimento dentro do prazo, quando verificado, gera no máximo obrigação de fazer. Sem prova de dano concreto e efetivo à honra ou dignidade do autor, não há dano moral indenizável. O mero dissabor decorrente da espera não configura dano moral.
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) Subsidiariamente, em caso de procedência da obrigação de fazer, o afastamento do pedido de dano moral por ausência de prova;
+c) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

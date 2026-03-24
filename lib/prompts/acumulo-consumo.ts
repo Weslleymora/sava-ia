@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const acumuloConsumoPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA em ações de ACÚMULO DE CONSUMO, LEITURA ESTIMADA, COBRANÇA DE CONSUMO ACUMULADO e ERRO DE LEITURA DO MEDIDOR.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, número da UC, período do acúmulo, tentativas de leitura, valor cobrado
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — nunca argumento sem fundamento legal
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — ACÚMULO DE CONSUMO
@@ -53,7 +75,7 @@ MODELO 5 — LEITURA CONFIRMADA (Consumo Real)
 • Documentos úteis: OS de leitura com assinatura do leiturista, histórico de consumo, comparativo com média anterior
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — ACÚMULO DE CONSUMO / ENERGISA
+FICHA DE ANÁLISE — ACÚMULO DE CONSUMO / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -87,7 +109,46 @@ FICHA DE ANÁLISE — ACÚMULO DE CONSUMO / ENERGISA
 • Recomendações Imediatas: [ações urgentes]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], pessoa jurídica de direito privado, concessionária de serviço público de distribuição de energia elétrica, por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando informações ESPECÍFICAS dos documentos: número da UC, período do acúmulo (quantos meses), causa do acúmulo (impedimento de acesso / defeito no medidor), valor cobrado, se o TCD foi assinado, datas das tentativas de leitura registradas. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. Da Legalidade do Acúmulo de Consumo — Arts. 257 e 258 da REN ANEEL nº 1.000/2021
+[Se impedimento de acesso: "Nos termos do art. 257 da REN ANEEL nº 1.000/2021, é obrigação do consumidor garantir livre acesso ao medidor pelo leiturista. Conforme registros do sistema, o leiturista realizou [NÚMERO] tentativas de leitura nas seguintes datas: [LISTAR DATAS E MOTIVOS DOS IMPEDIMENTOS]. O art. 258 da REN 1.000/2021 autoriza a leitura estimada por até 3 meses e a cobrança do consumo acumulado na 4ª tentativa frustrada. A ENERGISA agiu em estrita conformidade com a regulação."]
+[Se defeito no medidor: "O medidor apresentou defeito técnico comprovado por laudo da ENERGISA. O art. 323 da REN 1.000/2021 autoriza a recuperação do consumo não medido quando há defeito no medidor, calculada pela média histórica (Art. 595, III) ou carga instalada (Art. 595, IV)."]
+
+2.2. [Se TCD assinado] Da Validade do Termo de Confissão de Dívida
+O Autor, em [DATA], assinou o Termo de Confissão de Dívida (TCD), reconhecendo expressamente a dívida de R$ [VALOR] e concordando com o parcelamento em [X] parcelas. O TCD é ato jurídico perfeito (art. 5º, XXXVI, CF). Ajuizar ação após assinar o TCD configura venire contra factum proprium, inadmissível pelo ordenamento jurídico.
+
+2.3. Da Ausência de Cobrança Indevida
+O art. 39, inciso V, do CDC veda cobrança por quantia indevida. No presente caso, a cobrança é devida e decorre de consumo real de energia que foi utilizado pelo autor e não medido/faturado regularmente. Não há cobrança indevida — há apenas a regularização de consumo legítimo não faturado no momento correto.
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC;
+c) A produção de todos os meios de prova em direito admitidos.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

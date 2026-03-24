@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { OBJETOS_ENERGISA, ESTADOS_BRASIL } from '@/lib/prompts'
-import { Loader2, Send, Scale, FileText, MessageSquare, Sparkles, UploadCloud } from 'lucide-react'
+import { Loader2, Send, Scale, FileText, MessageSquare, Sparkles, UploadCloud, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 const STEPS = [
@@ -25,13 +25,18 @@ const STEPS = [
   { icon: Scale,         label: 'Extraindo texto...',             pct: 45 },
   { icon: Sparkles,      label: 'Aplicando prompt jurídico...',  pct: 60 },
   { icon: Loader2,       label: 'Consultando IA...',              pct: 75 },
-  { icon: MessageSquare, label: 'Gerando análise...',             pct: 90 },
+  { icon: MessageSquare, label: 'Gerando análise e minuta...',    pct: 90 },
   { icon: Sparkles,      label: 'Finalizando ficha...',           pct: 96 },
 ]
 
+// Limites por seção
+const MAX_FILE_MB = 20
+const MAX_SECTION_MB = 40
+
 export default function NovaAnalisePage() {
   const router = useRouter()
-  const [files, setFiles] = useState<File[]>([])
+  const [autosFiles, setAutosFiles] = useState<File[]>([])
+  const [clientFiles, setClientFiles] = useState<File[]>([])
   const [objeto, setObjeto] = useState('')
   const [estado, setEstado] = useState('')
   const [comentario, setComentario] = useState('')
@@ -44,8 +49,8 @@ export default function NovaAnalisePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (files.length === 0) {
-      toast.error('Adicione ao menos 1 arquivo para análise.')
+    if (autosFiles.length === 0) {
+      toast.error('Adicione ao menos 1 arquivo na "Cópia dos Autos".')
       return
     }
     if (!objeto) {
@@ -65,34 +70,41 @@ export default function NovaAnalisePage() {
       return
     }
 
-    // Gera o ID do caso no cliente para usar como caminho no Storage
     const caseId = crypto.randomUUID()
 
-    // Sanitiza nome para uso no Storage (remove acentos, espaços e chars especiais)
     function sanitizeFileName(name: string): string {
       return name
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
-        .replace(/[^a-zA-Z0-9._-]/g, '_')                // substitui chars inválidos
-        .replace(/_+/g, '_')                              // colapsa múltiplos _
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
     }
 
-    // 1. Upload direto para Supabase Storage (sem passar pelo Next.js)
-    const uploadedFiles: { name: string; size: number; type: string; storagePath: string }[] = []
+    type UploadedFile = { name: string; size: number; type: string; storagePath: string; category: 'autos' | 'cliente' }
+
+    // 1. Upload de todos os arquivos para Supabase Storage em paralelo
+    const allFiles: Array<{ file: File; category: 'autos' | 'cliente' }> = [
+      ...autosFiles.map(f => ({ file: f, category: 'autos' as const })),
+      ...clientFiles.map(f => ({ file: f, category: 'cliente' as const })),
+    ]
+
+    const uploadedFiles: UploadedFile[] = []
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        setPct(Math.round(5 + ((i + 1) / files.length) * 10))
+      let uploaded = 0
+      await Promise.all(
+        allFiles.map(async ({ file, category }) => {
+          const safeName = sanitizeFileName(file.name)
+          const storagePath = `${user.id}/${caseId}/${category}/${safeName}`
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(storagePath, file, { contentType: file.type, upsert: true })
 
-        const safeName = sanitizeFileName(file.name)
-        const storagePath = `${user.id}/${caseId}/${safeName}`
-        const { error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(storagePath, file, { contentType: file.type, upsert: true })
+          if (uploadError) throw new Error(`Erro ao enviar "${file.name}": ${uploadError.message}`)
 
-        if (uploadError) throw new Error(`Erro ao enviar "${file.name}": ${uploadError.message}`)
-        // name original preservado para exibição; storagePath usa nome sanitizado
-        uploadedFiles.push({ name: file.name, size: file.size, type: file.type, storagePath })
-      }
+          uploadedFiles.push({ name: file.name, size: file.size, type: file.type, storagePath, category })
+          uploaded++
+          setPct(Math.round(5 + (uploaded / allFiles.length) * 10))
+        })
+      )
     } catch (err) {
       toast.error((err as Error).message ?? 'Erro ao enviar arquivos.')
       setLoading(false)
@@ -105,7 +117,6 @@ export default function NovaAnalisePage() {
 
     abortRef.current = new AbortController()
 
-    // Avança steps automaticamente enquanto a API processa
     let currentStep = 1
     const stepTimer = setInterval(() => {
       currentStep = Math.min(currentStep + 1, STEPS.length - 1)
@@ -114,13 +125,16 @@ export default function NovaAnalisePage() {
     }, 3500)
 
     try {
-      // 2. Chama API com JSON pequeno (sem arquivos) — sem risco de 413
+      const autosUploaded = uploadedFiles.filter(f => f.category === 'autos')
+      const clientUploaded = uploadedFiles.filter(f => f.category === 'cliente')
+
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           caseId,
-          files: uploadedFiles,
+          autosFiles: autosUploaded,
+          clientFiles: clientUploaded,
           objeto,
           estado: estado || null,
           comentario: comentario.trim() || null,
@@ -245,7 +259,7 @@ export default function NovaAnalisePage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Nova Análise</h1>
         <p className="text-zinc-400 text-sm mt-1">
-          Envie os documentos do processo e a IA irá gerar uma ficha de análise completa.
+          Envie os documentos separados por categoria. A IA irá gerar ficha de análise completa + minuta de contestação.
         </p>
       </div>
 
@@ -299,15 +313,40 @@ export default function NovaAnalisePage() {
           </div>
         </div>
 
-        {/* Arquivos */}
+        {/* SEÇÃO 1 — Cópia dos Autos */}
         <div className="space-y-2">
-          <Label className="text-zinc-300">
-            Documentos do Processo <span className="text-violet-400">*</span>
-          </Label>
-          <p className="text-xs text-zinc-500">
-            Petição inicial, documentos do cliente, laudos, prints — envie todos de uma vez.
-          </p>
-          <FileUploader onChange={setFiles} maxFiles={10} />
+          <div className="flex items-start gap-2">
+            <div>
+              <Label className="text-zinc-300">
+                1. Cópia dos Autos <span className="text-violet-400">*</span>
+              </Label>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Petição inicial, documentos processuais, despachos, prints do processo.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-600 mb-1">
+            <Info className="w-3 h-3" />
+            <span>Máx. {MAX_FILE_MB} MB por arquivo · Total até {MAX_SECTION_MB} MB · PDF, DOCX, TXT ou imagem</span>
+          </div>
+          <FileUploader onChange={setAutosFiles} maxFiles={8} />
+        </div>
+
+        {/* SEÇÃO 2 — Documentos do Cliente */}
+        <div className="space-y-2">
+          <div>
+            <Label className="text-zinc-300">
+              2. Documentos do Cliente <span className="text-zinc-600">(opcional, mas recomendado)</span>
+            </Label>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Relatório do cliente, laudos internos, modelos de defesa, documentos técnicos da Energisa. A IA usará estes dados para personalizar a minuta.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-600 mb-1">
+            <Info className="w-3 h-3" />
+            <span>Máx. {MAX_FILE_MB} MB por arquivo · Total até {MAX_SECTION_MB} MB · PDF, DOCX, TXT ou imagem</span>
+          </div>
+          <FileUploader onChange={setClientFiles} maxFiles={6} />
         </div>
 
         {/* Comentário */}
@@ -317,7 +356,7 @@ export default function NovaAnalisePage() {
           </Label>
           <Textarea
             id="comentario"
-            placeholder="Ex: Quais são os pontos fracos dessa petição? Há risco de liminar? Sugira a melhor tese de defesa."
+            placeholder="Ex: Quais são os pontos fracos dessa petição? Há risco de liminar? Sugira a melhor tese de defesa. Atenção especial ao prazo de contestação."
             value={comentario}
             onChange={(e) => setComentario(e.target.value)}
             maxLength={2000}
@@ -331,11 +370,15 @@ export default function NovaAnalisePage() {
         <div className="pt-2">
           <Button
             type="submit"
-            className="w-full sm:w-auto bg-violet-600 hover:bg-violet-500 text-white font-semibold py-5 px-8 rounded-xl gap-2 transition-all shadow-lg shadow-violet-500/20"
+            disabled={autosFiles.length === 0 || !objeto}
+            className="w-full sm:w-auto bg-violet-600 hover:bg-violet-500 text-white font-semibold py-5 px-8 rounded-xl gap-2 transition-all shadow-lg shadow-violet-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-4 h-4" />
             Analisar com IA
           </Button>
+          {autosFiles.length === 0 && (
+            <p className="text-xs text-zinc-600 mt-2">Adicione ao menos 1 arquivo na "Cópia dos Autos" para continuar.</p>
+          )}
         </div>
       </form>
     </div>

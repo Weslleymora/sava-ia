@@ -2,16 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const redeDistribuicaoPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), defendendo a ENERGISA, em ações sobre REDE DE DISTRIBUIÇÃO / OBRAS / INFRAESTRUTURA.
 
-Você receberá abaixo o conteúdo bruto dos documentos do caso (petição inicial, documentos, prints, etc.), já unificado em texto:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, endereços, datas, obras, licenças, valores
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
 
-TAREFA GERAL:
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}TAREFA GERAL:
 Analisar esse material para preparar a defesa, identificar o cenário fático correto, enquadrar o caso em um dos MODELOS-BASE e selecionar os MÓDULOS adicionais aplicáveis, retornando uma FICHA DE ANÁLISE clara e objetiva.
 
 ────────────────────────
@@ -69,7 +88,7 @@ MÓDULOS ADICIONAIS (aplique se identificar no caso):
 Retorne SOMENTE a ficha abaixo, preenchida com base nos documentos:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — REDE DE DISTRIBUIÇÃO / ENERGISA
+FICHA DE ANÁLISE — REDE DE DISTRIBUIÇÃO / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -94,7 +113,47 @@ FICHA DE ANÁLISE — REDE DE DISTRIBUIÇÃO / ENERGISA
 • Recomendações Imediatas: [o que fazer antes da contestação]
 
 💬 RESPOSTA ÀS PERGUNTAS DO ADVOGADO
-${comentario ? '• [Responda diretamente às perguntas/instruções acima]' : '• N/A — Nenhuma pergunta adicional foi formulada.'}
+${comentario ? '• [Responda diretamente às perguntas/instruções acima com base nos documentos — cite fatos específicos]' : '• N/A — Nenhuma pergunta adicional foi formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando informações ESPECÍFICAS dos documentos: o que o autor requer (deslocamento de poste/rede, infraestrutura do loteamento, indenização por servidão, dano por fiação, etc.), endereço do imóvel, situação da obra/loteamento. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. [Tese principal — desenvolver com base no Modelo identificado]
+[Exemplo Modelo 1: "Nos termos do art. 18, inciso VIII, da Lei nº 6.766/1979, é obrigação do empreendedor do loteamento providenciar e custear a infraestrutura de energia elétrica. A ENERGISA somente conecta unidades após a entrega regular da rede pelo loteador. A responsabilidade pelo atraso/ausência de infraestrutura é do empreendedor [NOME DO EMPREENDEDOR, se identificado nos autos]."]
+[Exemplo Modelo 2: "O art. 73 da REN ANEEL nº 1.000/2021 é expresso: o custo de deslocamento de rede/poste é de responsabilidade do interessado/solicitante. A ENERGISA não está obrigada a arcar com esse custo sem ressarcimento."]
+[Desenvolver conforme o modelo identificado com os fatos específicos do caso]
+
+2.2. [Módulos Adicionais — aplicar os identificados]
+[Módulo A — Dano Moral: desenvolver argumento de proporcionalidade e nexo causal real]
+[Módulo B — Ilegitimidade: desenvolver se autor não comprova titularidade do imóvel]
+[Módulo C — Área Irregular: desenvolver se imóvel em área irregular]
+[Módulo D — Liminar: desenvolver fumus boni iuris e periculum in mora contrários ao autor]
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) O indeferimento de eventual pedido de medida liminar pelos fundamentos expostos;
+c) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

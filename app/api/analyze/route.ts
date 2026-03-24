@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { openai } from '@/lib/openai'
-import { extractTextFromFile, concatenateTexts, renderPdfToImages } from '@/lib/pdf'
+import { extractTextFromFile, concatenateTextsBySection, renderPdfToImages } from '@/lib/pdf'
 import { getPromptConfig } from '@/lib/prompts'
+import { loadKnowledgeBase } from '@/lib/knowledge-base'
 
 export const maxDuration = 120
 
@@ -79,6 +80,51 @@ interface FileInfo {
   size: number
   type: string
   storagePath: string
+  category: 'autos' | 'cliente'
+}
+
+async function processFile(
+  db: ReturnType<typeof createAdminClient>,
+  fileInfo: FileInfo,
+  caseId: string
+): Promise<string> {
+  const { data: fileBlob, error: downloadError } = await db.storage
+    .from('documents')
+    .download(fileInfo.storagePath)
+
+  if (downloadError || !fileBlob) {
+    throw new Error(`Erro ao ler "${fileInfo.name}": ${downloadError?.message ?? 'arquivo não encontrado'}`)
+  }
+
+  const buffer = Buffer.from(await fileBlob.arrayBuffer())
+
+  await db.from('documents').insert({
+    case_id: caseId,
+    name: fileInfo.name,
+    storage_path: fileInfo.storagePath,
+    size_bytes: fileInfo.size,
+  })
+
+  if (isImage(fileInfo.type, fileInfo.name)) {
+    return extractTextFromImage(buffer, fileInfo.type, fileInfo.name)
+  }
+
+  try {
+    return await extractTextFromFile(buffer, fileInfo.type, fileInfo.name)
+  } catch (err) {
+    const msg = (err as Error).message ?? ''
+    if (msg.startsWith('SCANNED_PDF:')) {
+      console.log(`[analyze] PDF escaneado detectado: "${fileInfo.name}" — iniciando OCR`)
+      const pages = await renderPdfToImages(buffer)
+      const pageTexts = await Promise.all(
+        pages.map((img, i) =>
+          extractTextFromImage(img, 'image/png', `${fileInfo.name} — p.${i + 1}`)
+        )
+      )
+      return pageTexts.join('\n\n')
+    }
+    throw err
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -90,21 +136,24 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json() as {
     caseId: string
-    files: FileInfo[]
+    autosFiles: FileInfo[]
+    clientFiles: FileInfo[]
     objeto: string
     estado: string | null
     comentario: string | null
     titulo: string | null
   }
 
-  const { caseId, files, objeto, estado, comentario, titulo } = body
+  const { caseId, autosFiles, clientFiles, objeto, estado, comentario, titulo } = body
 
   if (!caseId) return NextResponse.json({ error: 'caseId é obrigatório' }, { status: 400 })
   if (!objeto) return NextResponse.json({ error: 'Objeto é obrigatório' }, { status: 400 })
-  if (!files || files.length === 0) return NextResponse.json({ error: 'Envie ao menos 1 arquivo' }, { status: 400 })
+  if (!autosFiles || autosFiles.length === 0) return NextResponse.json({ error: 'Envie ao menos 1 arquivo na Cópia dos Autos' }, { status: 400 })
+
+  const allFiles = [...autosFiles, ...(clientFiles ?? [])]
 
   // Verifica que cada arquivo pertence ao usuário autenticado
-  for (const f of files) {
+  for (const f of allFiles) {
     if (!f.storagePath.startsWith(`${user.id}/`)) {
       return NextResponse.json({ error: 'Acesso negado ao arquivo.' }, { status: 403 })
     }
@@ -131,65 +180,63 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 2. Baixa e processa arquivos do Supabase Storage
-    const texts: string[] = []
-    const fileNames: string[] = []
+    // 2. Baixa e processa arquivos em paralelo (autos e cliente separados)
+    const [autosResults, clientResults] = await Promise.all([
+      Promise.all(autosFiles.map(f => processFile(db, f, caseId))),
+      Promise.all((clientFiles ?? []).map(f => processFile(db, f, caseId))),
+    ])
 
-    for (const fileInfo of files) {
-      const { data: fileBlob, error: downloadError } = await db.storage
-        .from('documents')
-        .download(fileInfo.storagePath)
+    const autosNames = autosFiles.map(f => f.name)
+    const clientNames = (clientFiles ?? []).map(f => f.name)
 
-      if (downloadError || !fileBlob) {
-        throw new Error(`Erro ao ler "${fileInfo.name}": ${downloadError?.message ?? 'arquivo não encontrado'}`)
-      }
+    // 3. Concatena textos por seção (autos separados de documentos do cliente)
+    const { autosText, clientText } = concatenateTextsBySection(
+      autosResults, autosNames,
+      clientResults, clientNames
+    )
 
-      const buffer = Buffer.from(await fileBlob.arrayBuffer())
+    // 4. Carrega base de conhecimento interna (modelos + exemplos reais do escritório)
+    const kbText = await loadKnowledgeBase(objeto, estado)
 
-      await db.from('documents').insert({
-        case_id: caseId,
-        name: fileInfo.name,
-        storage_path: fileInfo.storagePath,
-        size_bytes: fileInfo.size,
-      })
-
-      let text: string
-      if (isImage(fileInfo.type, fileInfo.name)) {
-        text = await extractTextFromImage(buffer, fileInfo.type, fileInfo.name)
-      } else {
-        try {
-          text = await extractTextFromFile(buffer, fileInfo.type, fileInfo.name)
-        } catch (err) {
-          const msg = (err as Error).message ?? ''
-          if (msg.startsWith('SCANNED_PDF:')) {
-            // PDF escaneado — renderiza páginas e usa OCR via GPT-4o Vision
-            console.log(`[analyze] PDF escaneado detectado: "${fileInfo.name}" — iniciando OCR`)
-            const pages = await renderPdfToImages(buffer)
-            const pageTexts = await Promise.all(
-              pages.map((img, i) =>
-                extractTextFromImage(img, 'image/png', `${fileInfo.name} — p.${i + 1}`)
-              )
-            )
-            text = pageTexts.join('\n\n')
-          } else {
-            throw err
-          }
-        }
-      }
-      texts.push(text)
-      fileNames.push(fileInfo.name)
-    }
-
-    // 3. Gera análise principal via streaming
+    // 5. Gera análise principal via streaming
     const promptConfig = getPromptConfig(objeto)
-    const documentText = concatenateTexts(texts, fileNames)
-    const prompt = promptConfig.buildPrompt(documentText, comentario || undefined)
+    const prompt = promptConfig.buildPrompt(autosText, clientText, comentario || undefined, estado || undefined)
 
     let analysisContent = ''
 
+    // Injeta a base de conhecimento como mensagem de sistema (separada do prompt do caso)
+    type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
+    const messages: ChatMsg[] = []
+
+    if (kbText) {
+      messages.push({
+        role: 'system',
+        content: `Você é um advogado sênior do escritório SAVA (Sebadelhe Aranha & Vasconcelos).
+
+Abaixo está a BASE DE CONHECIMENTO INTERNA DO ESCRITÓRIO, contendo um modelo padrão e exemplos reais de contestações já elaboradas em casos similares ao que será analisado.
+
+USE ESTA BASE como referência principal para:
+• Linguagem e estilo da minuta (siga o padrão do escritório)
+• Estrutura da contestação (use a mesma organização dos modelos)
+• Teses e argumentos jurídicos que o escritório já utilizou com sucesso
+• Nível de detalhe e especificidade esperado
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BASE DE CONHECIMENTO — MODELOS E CASOS REAIS DO ESCRITÓRIO SAVA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${kbText}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANTE: Adapte os modelos acima ao caso concreto. Não copie dados de outros casos — use apenas o estilo, a estrutura e as teses. Os fatos devem vir dos documentos do caso atual.`,
+      })
+    }
+
+    messages.push({ role: 'user', content: prompt })
+
     const stream = await openai.chat.completions.create({
       model: promptConfig.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       stream: true,
       temperature: 0.3,
     })
@@ -208,7 +255,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 4. Salva análise completa
+        // 5. Salva análise completa
         await db.from('analyses').insert({
           case_id: caseId,
           content: analysisContent,
@@ -218,7 +265,7 @@ export async function POST(req: NextRequest) {
 
         await db.from('cases').update({ status: 'done' }).eq('id', caseId)
 
-        // 5. Gera resumo executivo em background
+        // 6. Gera resumo executivo em background
         gerarResumo(analysisContent, objeto, titulo)
           .then(resumo => {
             if (resumo) {

@@ -2,17 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const danosEletricosPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), com 20 anos de experiência exclusiva na defesa da ENERGISA em ações de RESSARCIMENTO POR DANOS ELÉTRICOS EM EQUIPAMENTOS.
 
-Você recebeu os documentos do caso abaixo. Leia com atenção e identifique TODOS os elementos relevantes para a defesa.
-
-DOCUMENTOS DO CASO:
-${documentText}
-
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nomes, datas, valores, equipamentos danificados, número da UC, número do processo
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — nunca argumento sem fundamento legal
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — DANOS ELÉTRICOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • REN ANEEL nº 1.000/2021 — Arts. 609 a 637 (Ressarcimento de Danos Elétricos)
@@ -82,43 +100,89 @@ MODELO 9 — COMPLEXIDADE TÉCNICA (Foro Inadequado / Necessidade de Perícia)
 • Base: Art. 3º, §2º, Lei 9.099/95; complexidade da causa
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — DANOS ELÉTRICOS / ENERGISA
+FICHA DE ANÁLISE — DANOS ELÉTRICOS / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
-• Autor/Reclamante: [nome completo + qualificação: PF ou PJ]
-• Unidade Consumidora (UC): [número, se informado]
-• Equipamentos Alegadamente Danificados: [lista detalhada com valores unitários]
-• Valor Total Pleiteado: [dano material + dano moral se houver]
-• Data do Evento Alegado: [data]
+• Autor/Reclamante: [nome completo + qualificação: PF ou PJ — extrair dos autos]
+• Unidade Consumidora (UC): [número — extrair dos autos]
+• Número do Processo: [extrair dos autos]
+• Equipamentos Alegadamente Danificados: [lista detalhada com valores unitários — conforme petição]
+• Valor Total Pleiteado: [dano material R$ + dano moral R$ se houver — conforme petição]
+• Data do Evento Alegado: [data exata — extrair dos autos]
 • Houve Pedido Administrativo Prévio: [Sim — protocolo nº / Não / Não informado]
-• Resultado do Pedido Administrativo: [Deferido / Indeferido / Sem resposta / N/A]
+• Resultado do Pedido Administrativo: [Deferido / Indeferido — motivo / Sem resposta / N/A]
 
 🔍 ANÁLISE TÉCNICA E FÁTICA
-• Modelo(s) de Defesa Identificado(s): [Modelo X — Nome + justificativa de 2-3 linhas para cada]
-• Perturbação na Rede Comprovada: [Sim / Não / A verificar nos registros PRODIST]
-• Prazo Decadencial (90 dias, Art. 614): [Respeitado / Extrapolado — calcule a diferença / A verificar]
+• Modelo(s) de Defesa Identificado(s): [Modelo X — Nome + justificativa de 2-3 linhas com fatos específicos dos documentos]
+• Perturbação na Rede Comprovada: [Sim — tipo e data / Não / A verificar nos registros PRODIST]
+• Prazo Decadencial (90 dias, Art. 614 REN 1.000): [Respeitado — calcular / Extrapolado — especificar dias de atraso / A verificar]
 • Documentação Apresentada pelo Autor: [Nota fiscal: Sim/Não | Laudo técnico: Sim/Não/Genérico | Fotos: Sim/Não]
 • Qualidade do Laudo do Autor: [Adequado / Genérico sem metodologia / Empresa com conflito de interesse / Sem CREA]
-• Equipamentos na Lista ANEEL (Anexo IV): [Sim / Parcialmente — especificar os que não constam / Não]
+• Equipamentos na Lista ANEEL (Anexo IV REN 1.000): [Sim / Parcialmente — especificar os que não constam / Não]
 • Pedido de Dano Moral: [Sim — valor R$ / Não]
 
 ⚖️ ESTRATÉGIA DE DEFESA
-• Tese Principal: [argumento central da contestação em 3-4 linhas]
-• Teses Subsidiárias: [argumentos alternativos em ordem de prioridade]
-• Fundamentos Legais Específicos: [artigos exatos da REN 1.000, PRODIST, CC, CDC, Súmulas, Temas STJ]
+• Tese Principal: [argumento central da contestação em 3-4 linhas com referência aos fatos concretos e artigos]
+• Teses Subsidiárias: [argumentos alternativos em ordem de prioridade, cada um com base legal específica]
+• Fundamentos Legais Específicos: [artigos exatos da REN 1.000, PRODIST, CC, CDC, Súmulas, Temas STJ — com números de inciso]
 • Documentos a Solicitar ao Cliente: [lista objetiva do que a ENERGISA precisa reunir para a defesa]
 • Proposta de Acordo: [Pertinente / Não pertinente — justificativa e eventual faixa de valor]
 
 ⚠️ PONTOS DE ATENÇÃO
-• Risco de Procedência: [Alto / Médio / Baixo — justificativa]
-• Pontos Fracos da Defesa: [o que pode prejudicar a ENERGISA]
+• Risco de Procedência: [Alto / Médio / Baixo — justificativa com base nos fatos e provas do caso]
+• Pontos Fracos da Defesa: [o que pode prejudicar a ENERGISA — não omita vulnerabilidades]
 • Risco de Dano Moral: [Alto / Médio / Baixo — análise específica]
 • Prazo para Contestação: [verificar data de citação e calcular prazo]
-• Recomendações Imediatas: [ações urgentes antes da contestação]
+• Recomendações Imediatas: [ações urgentes e específicas antes da contestação]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente e de forma detalhada a cada ponto levantado nas instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente e de forma detalhada a cada ponto levantado nas instruções acima, com base nos documentos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], pessoa jurídica de direito privado, concessionária de serviço público de distribuição de energia elétrica, por seus advogados, vem, respeitosamente, à presença de Vossa Excelência, nos autos do processo nº [NÚMERO — extrair dos autos], em que figura como Autor(a) [NOME DO AUTOR — extrair dos autos], apresentar
+
+CONTESTAÇÃO
+
+com fulcro nos arts. 335 e seguintes do Código de Processo Civil, pelos fatos e fundamentos jurídicos a seguir expostos:
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando as informações ESPECÍFICAS dos documentos: data do evento alegado pelo autor, equipamentos listados, valores pretendidos, se houve pedido administrativo prévio, resultado desse pedido, data da petição. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. Da Inexistência de Nexo Causal — Ausência de Perturbação na Rede
+[Desenvolver com base no modelo identificado. Se não há registros de perturbação no PRODIST: "Não houve qualquer perturbação elétrica registrada nos sistemas da ENERGISA na UC nº [NÚMERO] na data de [DATA], conforme relatório de qualidade de energia. Nos termos do art. 621, inciso I, da REN ANEEL nº 1.000/2021, exclui-se a responsabilidade da distribuidora quando não comprovada a perturbação na rede."]
+
+2.2. Da Fragilidade Probatória do Laudo Apresentado
+[Se aplicável — desenvolver com base no Modelo 6 e STJ Tema 1.282]
+O laudo apresentado pelo autor foi elaborado por [empresa de assistência técnica — identificar do processo], sem registro no CREA, sem análise dos registros da rede distribuidora, com conclusão genérica de "queimou por oscilação de energia". Nos termos do Tema 1.282 do Superior Tribunal de Justiça, tal laudo tem valor probatório reduzido, sendo necessária perícia técnica imparcial para comprovação do nexo causal.
+
+2.3. [Se aplicável] Da Decadência Administrativa — Art. 614 da REN 1.000/2021
+O art. 614 da REN ANEEL nº 1.000/2021 estabelece prazo decadencial de 90 (noventa) dias para registro da reclamação de danos elétricos, contados da data do evento. [Se aplicável: "O evento alegado ocorreu em [DATA] e a reclamação foi formulada em [DATA], configurando decadência do direito de reclamação administrativa, o que prejudica o próprio direito material invocado."]
+
+2.4. [Se aplicável] Da Inexistência de Dano Moral
+O mero dissabor decorrente de eventual interrupção de energia, mesmo que reconhecida, não se equipara a dano moral indenizável. A jurisprudência do Superior Tribunal de Justiça é assente no sentido de que somente dano que represente grave ofensa à dignidade da pessoa humana autoriza a indenização por dano extrapatrimonial.
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) Subsidiariamente, a redução do valor pleiteado aos limites efetivamente comprovados nos autos;
+c) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do Código de Processo Civil;
+d) A produção de todos os meios de prova em direito admitidos, especialmente a realização de perícia técnica para apuração do nexo causal.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

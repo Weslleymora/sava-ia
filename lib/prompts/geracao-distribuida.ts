@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const geracaoDistribuidaPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA em ações relacionadas a GERAÇÃO DISTRIBUÍDA (GD), MICRO E MINIGERAÇÃO SOLAR, RECEITA EXTRACONCESSÃO e CONTRATOS DE CONEXÃO.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: datas de aprovação, protocolos, especificações técnicas, valores, regime regulatório
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento — calcule prazos com as datas dos documentos
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — GERAÇÃO DISTRIBUÍDA
@@ -72,7 +94,7 @@ MODELO 8 — RECEITA EXTRACONCESSÃO (Contrato Regular)
 • Documentos úteis: Contrato de compartilhamento de infraestrutura, tabela de preços, histórico de cobranças
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — GERAÇÃO DISTRIBUÍDA / ENERGISA
+FICHA DE ANÁLISE — GERAÇÃO DISTRIBUÍDA / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 DADOS DO CASO
@@ -106,7 +128,45 @@ FICHA DE ANÁLISE — GERAÇÃO DISTRIBUÍDA / ENERGISA
 • Recomendações Imediatas: [ações urgentes]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — DOS FATOS
+
+[Narrar os fatos do caso usando informações ESPECÍFICAS dos documentos: tipo do sistema GD (micro/minigeração), potência instalada, data de aprovação/conexão, tipo de reclamação (prazo de conexão, créditos, tarifação), regime regulatório aplicável (pré ou pós 07/01/2023), valor pleiteado. Não use linguagem genérica.]
+
+II — DO DIREITO
+
+2.1. [Tese principal — desenvolver com base no Modelo identificado]
+[Exemplo Modelo 1 (prazo dentro do regulatório): "A solicitação de conexão foi protocolada em [DATA]. O prazo regulatório aplicável é de [30/60] dias, nos termos do art. 282 da REN ANEEL nº 1.000/2021 para [micro/minigeração]. A data-limite para atendimento é [DATA]. Ausência de mora — falta de interesse de agir."]
+[Exemplo Modelo 2 (pendências técnicas): "O sistema do autor não atendeu os requisitos técnicos exigidos pelo art. 289 da REN ANEEL nº 1.000/2021, especificamente: [detalhar as não-conformidades apontadas na vistoria técnica]. O prazo regulatório fica suspenso até a regularização pelo autor."]
+[Exemplo Modelo 3 (créditos regulares): "O cálculo dos créditos foi realizado conforme metodologia da ANEEL (Art. 295 da REN 1.000/2021 / Lei nº 14.300/2022). O histórico de medição demonstra [dados concretos da geração vs. consumo]."]
+[Exemplo Modelo 4 (Marco Legal): "O sistema do autor foi aprovado em [DATA], portanto após 07/01/2023, aplicando-se o regime da Lei nº 14.300/2022. As alterações promovidas pela ENERGISA estão em estrita conformidade com a nova legislação. Não há direito adquirido ao regime anterior para sistemas novos."]
+
+2.2. Da Regularidade Procedimental
+[Desenvolver o cumprimento de todos os procedimentos regulatórios pela ENERGISA com datas e fatos concretos dos documentos]
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) A improcedência total dos pedidos formulados na inicial;
+b) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC;
+c) A produção de todos os meios de prova em direito admitidos.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

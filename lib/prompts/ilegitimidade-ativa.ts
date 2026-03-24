@@ -2,13 +2,35 @@ import { MODELS } from '@/lib/openai'
 
 export const ilegitimidadeAtivaPrompt = {
   model: MODELS.primary,
-  buildPrompt: (documentText: string, comentario?: string) => `
+  buildPrompt: (autosText: string, clientText: string | null, comentario?: string, estado?: string) => `
 Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vasconcelos), especialista na defesa da ENERGISA. Sua tarefa é identificar e arguir ILEGITIMIDADE ATIVA em ações onde o autor não é o titular da relação jurídica com a concessionária.
 
-DOCUMENTOS DO CASO:
-${documentText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ REGRAS ABSOLUTAS — LEIA ANTES DE COMEÇAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• USE APENAS fatos concretos dos documentos: nome do autor, CPF, titular cadastrado na UC, relação entre eles
+• PROIBIDO linguagem genérica: "conforme documentos", "segundo o informado", "como mencionado"
+• CITE ARTIGOS ESPECÍFICOS (número + inciso + lei) em cada argumento
+• Se há relatório ou informações do cliente nos DOCUMENTOS DO CLIENTE, incorpore na análise e na minuta
+• A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
+• Se uma informação não constar dos documentos, escreva "não informado nos autos — verificar no sistema"
 
-${comentario ? `\nINSTRUÇÕES ADICIONAIS DO ADVOGADO:\n${comentario}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${autosText}
+
+${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${clientText}
+
+` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUÇÕES DO ADVOGADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${comentario}
+
+` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — ILEGITIMIDADE ATIVA
@@ -64,7 +86,7 @@ Verificar se o autor:
 (d) Foi cadastrado como responsável pela UC → verificar cadastro
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FICHA DE ANÁLISE — ILEGITIMIDADE ATIVA / ENERGISA
+FICHA DE ANÁLISE — ILEGITIMIDADE ATIVA / ENERGISA${estado ? ` / ${estado.toUpperCase()}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📋 IDENTIFICAÇÃO DO CASO
@@ -99,7 +121,44 @@ FICHA DE ANÁLISE — ILEGITIMIDADE ATIVA / ENERGISA
 • Recomendações Imediatas: [ações urgentes]
 
 💬 RESPOSTA ÀS INSTRUÇÕES DO ADVOGADO
-${comentario ? '• [Responda diretamente cada ponto das instruções acima]' : '• Nenhuma instrução adicional formulada.'}
+${comentario ? '• [Responda diretamente cada ponto das instruções acima com base nos documentos — cite fatos específicos]' : '• Nenhuma instrução adicional formulada.'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 MINUTA DE CONTESTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA [VARA — extrair dos autos] DA COMARCA DE [CIDADE/ESTADO — extrair dos autos]
+
+[RAZÃO SOCIAL DA ENERGISA CONFORME ESTADO${estado ? ` DE ${estado.toUpperCase()}` : ''}], por seus advogados, vem apresentar
+
+CONTESTAÇÃO
+
+I — PRELIMINAR — DA ILEGITIMIDADE ATIVA (Art. 337, XI do CPC)
+
+O Autor [NOME — extrair dos autos], CPF nº [CPF — extrair dos autos], não detém legitimidade para propor a presente ação, nos termos dos arts. 17 e 337, inciso XI, do Código de Processo Civil.
+
+[Descrever o cenário identificado com fatos concretos dos documentos: quem é o autor, quem é o titular da UC, qual a relação entre eles — inquilino / parente / comprador sem transferência / empresa diferente da titular / terceiro pagador, etc.]
+
+O contrato de fornecimento de energia elétrica é celebrado com pessoa determinada, conforme o art. 138 da REN ANEEL nº 1.000/2021. O titular cadastrado na UC nº [NÚMERO] é [NOME DO TITULAR], e não o Autor. O mero [fato gerador da alegação de legitimidade pelo autor — ex: pagamento das faturas / residência no imóvel / parentesco] não cria legitimidade ativa para questionar atos relativos à UC de terceiro.
+
+Requer-se a extinção do processo sem resolução do mérito, na forma do art. 485, inciso VI, do CPC.
+
+II — NO MÉRITO (SUBSIDIARIAMENTE)
+
+[Mesmo que a preliminar seja rejeitada, desenvolver a defesa de mérito aplicável ao tipo de ação, com base nos fatos dos documentos e artigos específicos da legislação pertinente ao objeto principal da ação]
+
+III — DOS PEDIDOS
+
+Ante o exposto, requer-se:
+a) Em caráter preliminar: a extinção do processo sem resolução do mérito por ilegitimidade ativa, nos termos dos arts. 337, XI e 485, VI do CPC;
+b) No mérito, subsidiariamente: a improcedência total dos pedidos formulados na inicial;
+c) A condenação da parte Autora ao pagamento de custas processuais e honorários advocatícios, nos termos do art. 85 do CPC.
+
+Termos em que, pede e espera deferimento.
+
+[Cidade/UF${estado ? ` — ${estado}` : ''}], [data].
+
+[ADVOGADO RESPONSÁVEL — SAVA]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `,

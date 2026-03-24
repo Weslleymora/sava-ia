@@ -130,3 +130,32 @@ export function concatenateTexts(texts: string[], fileNames?: string[]): string 
 
   return truncate(joined, MAX_CHARS_TOTAL)
 }
+
+/**
+ * Concatena dois grupos de documentos em seções separadas.
+ * Retorna textos prontos para injeção nos prompts.
+ */
+export function concatenateTextsBySection(
+  autosTexts: string[],
+  autosNames: string[],
+  clientTexts: string[],
+  clientNames: string[]
+): { autosText: string; clientText: string | null } {
+  // Seção 1 — Cópia dos Autos
+  const autosTruncated = autosTexts.map((t, i) => truncate(t, MAX_CHARS_PER_DOC, autosNames[i]))
+  const autosJoined = autosTruncated
+    .map((t, i) => autosTruncated.length > 1 ? `=== AUTOS — DOCUMENTO ${i + 1}: ${autosNames[i]} ===\n\n${t}` : t)
+    .join('\n\n')
+  const autosText = truncate(autosJoined, MAX_CHARS_TOTAL)
+
+  // Seção 2 — Documentos do Cliente (opcional)
+  if (clientTexts.length === 0) return { autosText, clientText: null }
+
+  const clientTruncated = clientTexts.map((t, i) => truncate(t, MAX_CHARS_PER_DOC, clientNames[i]))
+  const clientJoined = clientTruncated
+    .map((t, i) => clientTruncated.length > 1 ? `=== CLIENTE — DOCUMENTO ${i + 1}: ${clientNames[i]} ===\n\n${t}` : `=== ${clientNames[i]} ===\n\n${t}`)
+    .join('\n\n')
+  const clientText = truncate(clientJoined, Math.floor(MAX_CHARS_TOTAL * 0.6))
+
+  return { autosText, clientText }
+}
