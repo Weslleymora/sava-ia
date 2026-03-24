@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { openai, MODELS } from '@/lib/openai'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const maxDuration = 60
 
@@ -9,6 +10,16 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Rate limiting: 60 mensagens por hora por usuário
+  const rl = checkRateLimit(`chat:${user.id}`, 60, 60 * 60 * 1000)
+  if (!rl.allowed) {
+    const resetMin = Math.ceil((rl.resetAt - Date.now()) / 60000)
+    return NextResponse.json(
+      { error: `Limite de mensagens atingido. Tente novamente em ${resetMin} minuto(s).` },
+      { status: 429 }
+    )
+  }
 
   const body = await req.json()
   const { caseId, message } = body as { caseId: string; message: string }

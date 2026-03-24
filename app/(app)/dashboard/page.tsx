@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import CaseCard from '@/components/CaseCard'
+import CasesList from '@/components/CasesList'
 import { Button } from '@/components/ui/button'
 import { PlusCircle, FolderOpen, CheckCircle2, Loader2, AlertCircle, LayoutGrid } from 'lucide-react'
 
@@ -24,15 +25,15 @@ export default async function DashboardPage() {
 
   const isAdmin = profile?.role === 'admin'
 
-  // Query separada para evitar problemas com join
+  // Uma única query com documentos e análises embutidos — elimina as 2 queries extras
   const { data: cases, error: casesError } = isAdmin
     ? await db
         .from('cases')
-        .select('id, titulo, objeto, estado, status, created_at, user_id')
+        .select('id, titulo, objeto, estado, status, created_at, user_id, documents(id), analyses(case_id, resumo)')
         .order('created_at', { ascending: false })
     : await db
         .from('cases')
-        .select('id, titulo, objeto, estado, status, created_at, user_id')
+        .select('id, titulo, objeto, estado, status, created_at, user_id, documents(id), analyses(case_id, resumo)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
@@ -40,34 +41,31 @@ export default async function DashboardPage() {
     console.error('[dashboard] casesError:', casesError)
   }
 
-  const all = cases ?? []
-
-  // Busca contagem de documentos para cada caso
-  const caseIds = all.map(c => c.id)
-  const { data: documents } = caseIds.length > 0
-    ? await db
-        .from('documents')
-        .select('case_id')
-        .in('case_id', caseIds)
-    : { data: [] }
-
-  // Busca resumos das análises
-  const { data: analyses } = caseIds.length > 0
-    ? await db
-        .from('analyses')
-        .select('case_id, resumo')
-        .in('case_id', caseIds)
-    : { data: [] }
-
-  const docCountMap: Record<string, number> = {}
-  for (const doc of documents ?? []) {
-    docCountMap[doc.case_id] = (docCountMap[doc.case_id] ?? 0) + 1
+  // Extrai contagem e resumo dos dados embutidos
+  type CaseRow = {
+    id: string
+    titulo: string | null
+    objeto: string
+    estado: string | null
+    status: string
+    created_at: string
+    user_id: string
+    documents: { id: string }[]
+    analyses: { case_id: string; resumo: string | null }[]
   }
 
-  const resumoMap: Record<string, string> = {}
-  for (const a of analyses ?? []) {
-    if (a.resumo) resumoMap[a.case_id] = a.resumo
-  }
+  const all: CaseRow[] = (cases ?? []) as CaseRow[]
+
+  const casesWithMeta = all.map(c => ({
+    id: c.id,
+    titulo: c.titulo,
+    objeto: c.objeto,
+    estado: c.estado,
+    status: c.status,
+    createdAt: c.created_at,
+    docCount: (c.documents ?? []).length,
+    resumo: c.analyses?.[0]?.resumo ?? undefined,
+  }))
 
   const stats = {
     total:     all.length,
@@ -108,28 +106,9 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* Cases */}
+      {/* Cases com busca/filtro no client */}
       {all.length > 0 ? (
-        <>
-          <p className="text-zinc-500 text-sm mb-4">
-            {stats.total} {stats.total === 1 ? 'processo encontrado' : 'processos encontrados'}
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {all.map((c) => (
-              <CaseCard
-                key={c.id}
-                id={c.id}
-                titulo={c.titulo}
-                objeto={c.objeto}
-                estado={c.estado}
-                status={c.status}
-                createdAt={c.created_at}
-                docCount={docCountMap[c.id] ?? 0}
-                resumo={resumoMap[c.id]}
-              />
-            ))}
-          </div>
-        </>
+        <CasesList cases={casesWithMeta} />
       ) : (
         <div className="flex flex-col items-center justify-center py-28 text-center">
           <div className="w-20 h-20 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-6">

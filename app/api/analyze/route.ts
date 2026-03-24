@@ -5,6 +5,7 @@ import { openai } from '@/lib/openai'
 import { extractTextFromFile, concatenateTextsBySection, renderPdfToImages } from '@/lib/pdf'
 import { getPromptConfig } from '@/lib/prompts'
 import { loadKnowledgeBase } from '@/lib/knowledge-base'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const maxDuration = 120
 
@@ -13,6 +14,27 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'imag
 function isImage(mimeType: string, fileName: string) {
   return IMAGE_TYPES.includes(mimeType) || /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(fileName)
 }
+
+// Semáforo para limitar OCR concorrente (max 3 chamadas Vision simultâneas)
+function makeSemaphore(limit: number) {
+  let active = 0
+  const queue: Array<() => void> = []
+  return function<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const run = async () => {
+        active++
+        try { resolve(await fn()) } catch (e) { reject(e) } finally {
+          active--
+          if (queue.length > 0) queue.shift()!()
+        }
+      }
+      if (active < limit) run()
+      else queue.push(run)
+    })
+  }
+}
+
+const ocrLimiter = makeSemaphore(3)
 
 async function extractTextFromImage(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
   const base64 = buffer.toString('base64')
@@ -106,7 +128,7 @@ async function processFile(
   })
 
   if (isImage(fileInfo.type, fileInfo.name)) {
-    return extractTextFromImage(buffer, fileInfo.type, fileInfo.name)
+    return ocrLimiter(() => extractTextFromImage(buffer, fileInfo.type, fileInfo.name))
   }
 
   try {
@@ -114,11 +136,12 @@ async function processFile(
   } catch (err) {
     const msg = (err as Error).message ?? ''
     if (msg.startsWith('SCANNED_PDF:')) {
-      console.log(`[analyze] PDF escaneado detectado: "${fileInfo.name}" — iniciando OCR`)
+      console.log(`[analyze] PDF escaneado: "${fileInfo.name}" — OCR em até 3 páginas simultâneas`)
       const pages = await renderPdfToImages(buffer)
+      // OCR com concorrência limitada a 3 páginas simultâneas
       const pageTexts = await Promise.all(
         pages.map((img, i) =>
-          extractTextFromImage(img, 'image/png', `${fileInfo.name} — p.${i + 1}`)
+          ocrLimiter(() => extractTextFromImage(img, 'image/png', `${fileInfo.name} — p.${i + 1}`))
         )
       )
       return pageTexts.join('\n\n')
@@ -131,6 +154,16 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Rate limiting: 10 análises por hora por usuário
+  const rl = checkRateLimit(`analyze:${user.id}`, 10, 60 * 60 * 1000)
+  if (!rl.allowed) {
+    const resetMin = Math.ceil((rl.resetAt - Date.now()) / 60000)
+    return NextResponse.json(
+      { error: `Limite de análises atingido. Tente novamente em ${resetMin} minuto(s).` },
+      { status: 429 }
+    )
+  }
 
   const db = createAdminClient()
 
@@ -195,7 +228,7 @@ export async function POST(req: NextRequest) {
       clientResults, clientNames
     )
 
-    // 4. Carrega base de conhecimento interna (modelos + exemplos reais do escritório)
+    // 4. Carrega base de conhecimento interna (com cache em memória)
     const kbText = await loadKnowledgeBase(objeto, estado)
 
     // 5. Gera análise principal via streaming
@@ -204,7 +237,6 @@ export async function POST(req: NextRequest) {
 
     let analysisContent = ''
 
-    // Injeta a base de conhecimento como mensagem de sistema (separada do prompt do caso)
     type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
     const messages: ChatMsg[] = []
 
@@ -265,11 +297,15 @@ IMPORTANTE: Adapte os modelos acima ao caso concreto. Não copie dados de outros
 
         await db.from('cases').update({ status: 'done' }).eq('id', caseId)
 
-        // 6. Gera resumo executivo em background
+        // 6. Gera resumo executivo em background (não bloqueia a resposta)
         gerarResumo(analysisContent, objeto, titulo)
-          .then(resumo => {
+          .then(async (resumo) => {
             if (resumo) {
-              db.from('analyses').update({ resumo }).eq('case_id', caseId)
+              const { error } = await db
+                .from('analyses')
+                .update({ resumo })
+                .eq('case_id', caseId)
+              if (error) console.error('[analyze] resumo save failed:', error.message)
             }
           })
           .catch(e => console.error('[analyze] resumo generation failed:', e))

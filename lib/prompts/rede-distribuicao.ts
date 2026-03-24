@@ -1,4 +1,5 @@
 import { MODELS } from '@/lib/openai'
+import { buildDocumentBlocks } from './shared'
 
 export const redeDistribuicaoPrompt = {
   model: MODELS.primary,
@@ -15,22 +16,7 @@ Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vascon
 • A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso
 • Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${autosText}
-
-${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${clientText}
-
-` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUÇÕES DO ADVOGADO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${comentario}
-
-` : ''}TAREFA GERAL:
+${buildDocumentBlocks(autosText, clientText, comentario)}TAREFA GERAL:
 Analisar esse material para preparar a defesa, identificar o cenário fático correto, enquadrar o caso em um dos MODELOS-BASE e selecionar os MÓDULOS adicionais aplicáveis, retornando uma FICHA DE ANÁLISE clara e objetiva.
 
 ────────────────────────

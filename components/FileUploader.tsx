@@ -5,8 +5,8 @@ import { useDropzone, FileRejection } from 'react-dropzone'
 import { X, FileText, UploadCloud, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024  // 20 MB por arquivo
-const MAX_TOTAL_SIZE = 40 * 1024 * 1024 // 40 MB total
+const MAX_FILE_SIZE = 50 * 1024 * 1024   // 50 MB por arquivo
+const MAX_TOTAL_SIZE = 150 * 1024 * 1024 // 150 MB total
 
 interface FileUploaderProps {
   onChange: (files: File[]) => void
@@ -30,7 +30,7 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
       // Rejeições do dropzone (tipo inválido, excesso de arquivos)
       for (const { file, errors: errs } of rejected) {
         if (errs.some(e => e.code === 'file-too-large')) {
-          errors.push(`"${file.name}" excede 20 MB`)
+          errors.push(`"${file.name}" excede 50 MB`)
         } else if (errs.some(e => e.code === 'too-many-files')) {
           errors.push(`"${file.name}" ignorado — limite de ${maxFiles} arquivos`)
         } else {
@@ -43,7 +43,7 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
       // Verificar tamanho total
       const totalSize = merged.reduce((sum, f) => sum + f.size, 0)
       if (totalSize > MAX_TOTAL_SIZE) {
-        errors.push(`Total de arquivos excede 40 MB. Reduza a quantidade ou o tamanho dos arquivos.`)
+        errors.push(`Total de arquivos excede 150 MB. Reduza a quantidade ou o tamanho dos arquivos.`)
         setRejections(errors)
         return
       }
@@ -96,7 +96,7 @@ export default function FileUploader({ onChange, maxFiles = 10 }: FileUploaderPr
           {isDragActive ? 'Solte os arquivos aqui' : 'Clique ou arraste os arquivos'}
         </p>
         <p className="text-xs text-zinc-500 mt-1">
-          PDF, DOCX, DOC, TXT ou imagem • Até {maxFiles} arquivos • Máx. 20 MB por arquivo
+          PDF, DOCX, DOC, TXT ou imagem • Até {maxFiles} arquivos • Máx. 50 MB por arquivo
         </p>
       </div>
 

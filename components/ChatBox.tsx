@@ -18,9 +18,10 @@ interface Message {
 interface ChatBoxProps {
   caseId: string
   initialMessages?: Message[]
+  hideHeader?: boolean
 }
 
-export default function ChatBox({ caseId, initialMessages = [] }: ChatBoxProps) {
+export default function ChatBox({ caseId, initialMessages = [], hideHeader = false }: ChatBoxProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -105,11 +106,13 @@ export default function ChatBox({ caseId, initialMessages = [] }: ChatBoxProps) 
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-zinc-800">
-        <h2 className="text-sm font-semibold text-white">Conversa com a IA</h2>
-        <p className="text-xs text-zinc-500 mt-0.5">Faça perguntas sobre o caso analisado</p>
-      </div>
+      {/* Header — ocultável quando o container pai já tem header */}
+      {!hideHeader && (
+        <div className="px-5 py-4 border-b border-zinc-800">
+          <h2 className="text-sm font-semibold text-white">Conversa com a IA</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">Faça perguntas sobre o caso analisado</p>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>

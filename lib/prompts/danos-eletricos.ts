@@ -1,4 +1,5 @@
 import { MODELS } from '@/lib/openai'
+import { buildDocumentBlocks } from './shared'
 
 export const danosEletricosPrompt = {
   model: MODELS.primary,
@@ -15,22 +16,7 @@ Atue como Advogado Sênior Cível do escritório SAVA (Sebadelhe Aranha & Vascon
 • A MINUTA DE CONTESTAÇÃO deve ser completa e pronta para uso — sem colchetes em branco
 • Se uma informação não constar dos documentos, escreva "não informado nos autos"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CÓPIA DOS AUTOS — PETIÇÃO INICIAL E DOCUMENTOS PROCESSUAIS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${autosText}
-
-${clientText ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DOCUMENTOS DO CLIENTE — RELATÓRIO / MODELOS / INFORMAÇÕES INTERNAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${clientText}
-
-` : ''}${comentario ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUÇÕES DO ADVOGADO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${comentario}
-
-` : ''}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${buildDocumentBlocks(autosText, clientText, comentario)}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BASE LEGAL — DANOS ELÉTRICOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • REN ANEEL nº 1.000/2021 — Arts. 609 a 637 (Ressarcimento de Danos Elétricos)

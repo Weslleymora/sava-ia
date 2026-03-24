@@ -24,14 +24,38 @@ const STEPS = [
   { icon: FileText,      label: 'Lendo documentos...',           pct: 30 },
   { icon: Scale,         label: 'Extraindo texto...',             pct: 45 },
   { icon: Sparkles,      label: 'Aplicando prompt jurídico...',  pct: 60 },
-  { icon: Loader2,       label: 'Consultando IA...',              pct: 75 },
-  { icon: MessageSquare, label: 'Gerando análise e minuta...',    pct: 90 },
+  { icon: Loader2,       label: 'Consultando IA...',              pct: 72 },
+  { icon: MessageSquare, label: 'Gerando análise e minuta...',    pct: 88 },
   { icon: Sparkles,      label: 'Finalizando ficha...',           pct: 96 },
 ]
 
+// Intervalo em ms antes de avançar para o próximo step
+// Steps finais (IA) demoram muito mais — ficam no máximo possível
+const STEP_DURATIONS = [2000, 3000, 4000, 2000, 12000, 15000]
+
 // Limites por seção
-const MAX_FILE_MB = 20
-const MAX_SECTION_MB = 40
+const MAX_FILE_MB = 50
+const MAX_SECTION_MB = 150
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 2
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetch(url, options)
+    } catch (err) {
+      if (
+        attempt === maxRetries ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) throw err
+      // backoff exponencial: 1s, 2s
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)))
+    }
+  }
+  throw new Error('Número máximo de tentativas atingido')
+}
 
 export default function NovaAnalisePage() {
   const router = useRouter()
@@ -117,31 +141,41 @@ export default function NovaAnalisePage() {
 
     abortRef.current = new AbortController()
 
+    // Progressbar adaptativo: cada step tem duração específica
     let currentStep = 1
-    const stepTimer = setInterval(() => {
-      currentStep = Math.min(currentStep + 1, STEPS.length - 1)
-      setStepIdx(currentStep)
-      setPct(STEPS[currentStep].pct)
-    }, 3500)
+    function scheduleNext() {
+      if (currentStep >= STEPS.length - 1) return
+      const delay = STEP_DURATIONS[currentStep] ?? 5000
+      setTimeout(() => {
+        currentStep = Math.min(currentStep + 1, STEPS.length - 1)
+        setStepIdx(currentStep)
+        setPct(STEPS[currentStep].pct)
+        scheduleNext()
+      }, delay)
+    }
+    scheduleNext()
 
     try {
       const autosUploaded = uploadedFiles.filter(f => f.category === 'autos')
       const clientUploaded = uploadedFiles.filter(f => f.category === 'cliente')
 
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          caseId,
-          autosFiles: autosUploaded,
-          clientFiles: clientUploaded,
-          objeto,
-          estado: estado || null,
-          comentario: comentario.trim() || null,
-          titulo: titulo.trim() || null,
-        }),
-        signal: abortRef.current.signal,
-      })
+      const res = await fetchWithRetry(
+        '/api/analyze',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseId,
+            autosFiles: autosUploaded,
+            clientFiles: clientUploaded,
+            objeto,
+            estado: estado || null,
+            comentario: comentario.trim() || null,
+            titulo: titulo.trim() || null,
+          }),
+          signal: abortRef.current.signal,
+        }
+      )
 
       if (!res.ok) {
         let errorMsg = `Erro ${res.status}`
@@ -170,7 +204,6 @@ export default function NovaAnalisePage() {
             const data = JSON.parse(line.slice(6))
             if (data.caseId && !caseIdFromServer) caseIdFromServer = data.caseId
             if (data.done && caseIdFromServer) {
-              clearInterval(stepTimer)
               setPct(100)
               setTimeout(() => router.push(`/analise/${caseIdFromServer}`), 400)
               return
@@ -180,12 +213,10 @@ export default function NovaAnalisePage() {
       }
 
       if (caseIdFromServer) {
-        clearInterval(stepTimer)
         setPct(100)
         setTimeout(() => router.push(`/analise/${caseIdFromServer}`), 400)
       }
     } catch (err: unknown) {
-      clearInterval(stepTimer)
       if (err instanceof Error && err.name === 'AbortError') return
       toast.error((err as Error).message ?? 'Erro ao processar análise.')
       setLoading(false)

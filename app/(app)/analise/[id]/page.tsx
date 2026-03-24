@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import AnalysisViewer from '@/components/AnalysisViewer'
 import ChatBox from '@/components/ChatBox'
+import ChatToggle from '@/components/ChatToggle'
 import CopyButton from '@/components/CopyButton'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -140,7 +141,7 @@ export default async function AnalisePage({ params }: PageProps) {
       <div className="flex-1 flex overflow-hidden">
         {/* Análise */}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6 max-w-4xl space-y-4">
+          <div className="p-4 md:p-6 max-w-4xl space-y-4">
 
             {caseData.status === 'error' && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-5 flex items-start gap-3">
@@ -219,10 +220,13 @@ export default async function AnalisePage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Chat */}
-        <div className="w-96 border-l border-zinc-800 flex flex-col flex-shrink-0 bg-zinc-950">
+        {/* Chat — oculto em mobile, visível em lg+ */}
+        <div className="hidden lg:flex w-96 border-l border-zinc-800 flex-col flex-shrink-0 bg-zinc-950">
           <ChatBox caseId={id} initialMessages={messages} />
         </div>
+
+        {/* Chat flutuante para mobile/tablet */}
+        <ChatToggle caseId={id} initialMessages={messages} />
       </div>
     </div>
   )
